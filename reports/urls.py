@@ -38,8 +38,12 @@ urlpatterns = [
     # Profile
     path('profile/', views.profile_view, name='profile'),
 
+    # Site Expense & Daily Report Audit Reconciliation
+    path('audit/reconciliation/', views.site_reconciliation_view, name='site_reconciliation'),
+
     # JSON APIs for frontend dynamic calculations and checks
     path('api/employees/<int:pk>/', views.api_employee_detail, name='api_employee_detail'),
     path('api/check-duplicate-report/', views.api_check_duplicate_report, name='api_check_duplicate_report'),
     path('api/check-employee-visit/', views.api_check_employee_visit, name='api_check_employee_visit'),
+    path('api/daily-report-summary/', views.api_daily_report_summary, name='api_daily_report_summary'),
 ]

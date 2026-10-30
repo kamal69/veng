@@ -409,33 +409,93 @@
                     <div class="row g-3">
                         <div class="col-md-6">
                             <label class="form-label small fw-semibold">Transaction Date <span class="text-danger">*</span></label>
-                            <input type="date" name="transaction_date" class="form-control" value="{% now 'Y-m-d' %}" required>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label small fw-semibold">Expense Amount (₹) <span class="text-danger">*</span></label>
-                            <input type="number" step="0.01" name="amount" class="form-control fw-bold text-danger" placeholder="0.00" required>
+                            <input type="date" id="expenseDate" name="transaction_date" class="form-control" value="{% now 'Y-m-d' %}" required>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label small fw-semibold">Site Allocated</label>
-                            <select name="site" class="form-select">
+                            <select id="expenseSite" name="site" class="form-select">
                                 <option value="">-- General / Head Office --</option>
                                 {% for s in sites %}
                                     <option value="{{ s.id }}">{{ s.name }}</option>
                                 {% endfor %}
                             </select>
                         </div>
+
+                        <!-- LIVE DPR CROSS-CHECK BANNER -->
+                        <div class="col-12 d-none" id="dprCheckBanner">
+                            <!-- Injected via JavaScript -->
+                        </div>
+
                         <div class="col-md-6">
                             <label class="form-label small fw-semibold">Expense Category</label>
-                            <select name="category" class="form-select">
+                            <select id="expenseCategory" name="category" class="form-select">
                                 <option value="">-- Select Category --</option>
                                 {% for c in categories %}
-                                    <option value="{{ c.id }}">{{ c.name }}</option>
+                                    <option value="{{ c.id }}" data-group="{{ c.group_type }}">{{ c.name }}</option>
                                 {% endfor %}
                             </select>
                         </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Expense Amount (₹) <span class="text-danger">*</span></label>
+                            <input type="number" step="0.01" id="expenseAmount" name="amount" class="form-control fw-bold text-danger" placeholder="0.00" required>
+                        </div>
+
+                        <!-- LABOUR WAGE HELPER (Auto-calculates Count x Rate) -->
+                        <div class="col-12" id="labourHelperBox" style="display: none;">
+                            <div class="p-3 bg-light rounded border border-primary border-opacity-50">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <span class="small fw-bold text-primary"><i class="bi bi-people me-1"></i> Labour Wages Calculator</span>
+                                    <span class="extra-small text-muted">Auto-calculates amount &amp; details</span>
+                                </div>
+                                <div class="row g-2">
+                                    <div class="col-4">
+                                        <label class="extra-small text-muted fw-semibold">Worker Count</label>
+                                        <input type="number" id="calcLabourCount" class="form-control form-control-sm" placeholder="e.g. 4" min="1">
+                                    </div>
+                                    <div class="col-4">
+                                        <label class="extra-small text-muted fw-semibold">Daily Rate (₹)</label>
+                                        <input type="number" id="calcLabourRate" class="form-control form-control-sm" placeholder="e.g. 700" min="0">
+                                    </div>
+                                    <div class="col-4">
+                                        <label class="extra-small text-muted fw-semibold">Labour Type</label>
+                                        <select id="calcLabourType" class="form-select form-select-sm">
+                                            <option value="Labour">Labour</option>
+                                            <option value="Mason">Mason (Mistri)</option>
+                                            <option value="Painter">Painter</option>
+                                            <option value="Contractor">Contractor Worker</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- MACHINERY / FUEL HELPER (Auto-calculates Usage x Rate) -->
+                        <div class="col-12" id="machineryHelperBox" style="display: none;">
+                            <div class="p-3 bg-light rounded border border-info border-opacity-50">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <span class="small fw-bold text-info text-dark"><i class="bi bi-truck me-1"></i> Machinery / Fuel Calculator</span>
+                                    <span class="extra-small text-muted">Auto-calculates rental / fuel</span>
+                                </div>
+                                <div class="row g-2">
+                                    <div class="col-4">
+                                        <label class="extra-small text-muted fw-semibold">Machine / Vehicle</label>
+                                        <input type="text" id="calcMachineName" class="form-control form-control-sm" placeholder="e.g. JCB, Tractor, Mixer">
+                                    </div>
+                                    <div class="col-4">
+                                        <label class="extra-small text-muted fw-semibold">Usage (Hours/Days)</label>
+                                        <input type="number" step="0.5" id="calcMachineUsage" class="form-control form-control-sm" placeholder="e.g. 6">
+                                    </div>
+                                    <div class="col-4">
+                                        <label class="extra-small text-muted fw-semibold">Rate (₹)</label>
+                                        <input type="number" id="calcMachineRate" class="form-control form-control-sm" placeholder="e.g. 1000">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="col-md-12">
                             <label class="form-label small fw-semibold">Particulars / Work Details <span class="text-danger">*</span></label>
-                            <textarea name="particulars" class="form-control" rows="2" placeholder="Detailed description of what was purchased or paid for..." required></textarea>
+                            <textarea id="expenseParticulars" name="particulars" class="form-control" rows="2" placeholder="Detailed description of what was purchased or paid for..." required></textarea>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label small fw-semibold">Voucher / Bill No</label>
@@ -595,4 +655,166 @@
             </form>
         </div>
     </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const siteSelect = document.getElementById('expenseSite');
+    const dateInput = document.getElementById('expenseDate');
+    const catSelect = document.getElementById('expenseCategory');
+    const amtInput = document.getElementById('expenseAmount');
+    const partInput = document.getElementById('expenseParticulars');
+    const dprBanner = document.getElementById('dprCheckBanner');
+
+    const labourBox = document.getElementById('labourHelperBox');
+    const lCount = document.getElementById('calcLabourCount');
+    const lRate = document.getElementById('calcLabourRate');
+    const lType = document.getElementById('calcLabourType');
+
+    const machBox = document.getElementById('machineryHelperBox');
+    const mName = document.getElementById('calcMachineName');
+    const mUsage = document.getElementById('calcMachineUsage');
+    const mRate = document.getElementById('calcMachineRate');
+
+    // 1. Category Switch
+    if (catSelect) {
+        catSelect.addEventListener('change', function () {
+            const opt = this.options[this.selectedIndex];
+            const grp = (opt.getAttribute('data-group') || '').toUpperCase();
+            const text = (opt.text || '').toLowerCase();
+
+            if (grp === 'LABOUR' || text.includes('labour') || text.includes('mason')) {
+                labourBox.style.display = 'block';
+                machBox.style.display = 'none';
+            } else if (grp === 'MACHINERY' || grp === 'VEHICLE' || text.includes('machin') || text.includes('diesel') || text.includes('fuel')) {
+                machBox.style.display = 'block';
+                labourBox.style.display = 'none';
+            } else {
+                labourBox.style.display = 'none';
+                machBox.style.display = 'none';
+            }
+        });
+    }
+
+    // 2. Labour Calculation
+    function updateLabourCalc() {
+        const count = parseFloat(lCount.value) || 0;
+        const rate = parseFloat(lRate.value) || 0;
+        const type = lType.value || 'Labour';
+        if (count > 0 && rate > 0) {
+            const total = count * rate;
+            amtInput.value = total.toFixed(2);
+            partInput.value = `${count} ${type} @ ₹${rate}/-`;
+        }
+    }
+    if (lCount) lCount.addEventListener('input', updateLabourCalc);
+    if (lRate) lRate.addEventListener('input', updateLabourCalc);
+    if (lType) lType.addEventListener('change', updateLabourCalc);
+
+    // 3. Machinery Calculation
+    function updateMachCalc() {
+        const name = (mName.value || 'Machinery').trim();
+        const usage = parseFloat(mUsage.value) || 0;
+        const rate = parseFloat(mRate.value) || 0;
+        if (usage > 0 && rate > 0) {
+            const total = usage * rate;
+            amtInput.value = total.toFixed(2);
+            partInput.value = `${name} (${usage} @ ₹${rate})`;
+        }
+    }
+    if (mName) mName.addEventListener('input', updateMachCalc);
+    if (mUsage) mUsage.addEventListener('input', updateMachCalc);
+    if (mRate) mRate.addEventListener('input', updateMachCalc);
+
+    // 4. Live DPR Check
+    let currentDprData = null;
+    function checkDpr() {
+        const siteId = siteSelect ? siteSelect.value : '';
+        const dateVal = dateInput ? dateInput.value : '';
+        if (!siteId || !dateVal) {
+            dprBanner.classList.add('d-none');
+            return;
+        }
+
+        fetch(`/api/daily-report-summary/?site_id=${siteId}&date=${dateVal}`)
+            .then(res => res.json())
+            .then(data => {
+                currentDprData = data;
+                if (data.has_report) {
+                    let labourBtn = '';
+                    let machBtn = '';
+                    if (data.manpower_cost > 0) {
+                        labourBtn = `<button type="button" class="btn btn-outline-primary btn-sm py-0 extra-small" id="btnApplyDprLabour">
+                            <i class="bi bi-people me-1"></i>Apply Labour (₹${data.manpower_cost.toLocaleString()})
+                        </button>`;
+                    }
+                    if (data.machinery_cost > 0) {
+                        machBtn = `<button type="button" class="btn btn-outline-info btn-sm py-0 extra-small text-dark" id="btnApplyDprMach">
+                            <i class="bi bi-truck me-1"></i>Apply Machinery (₹${data.machinery_cost.toLocaleString()})
+                        </button>`;
+                    }
+
+                    dprBanner.innerHTML = `
+                        <div class="alert alert-success border-success py-2 px-3 mb-0 small">
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <span class="fw-bold text-success">
+                                    <i class="bi bi-check-circle-fill me-1"></i>Daily Report #${data.report_id} Found!
+                                </span>
+                                <span class="badge bg-success bg-opacity-25 text-success extra-small">${data.status}</span>
+                            </div>
+                            <div class="extra-small text-dark mb-2">
+                                <strong>Today Work:</strong> ${data.work_done_today ? data.work_done_today.substring(0, 80) : '--'} &bull;
+                                <strong>DPR Cost:</strong> ₹${data.total_site_cost.toLocaleString()}
+                            </div>
+                            <div class="d-flex gap-1">
+                                ${labourBtn}
+                                ${machBtn}
+                            </div>
+                        </div>
+                    `;
+                    dprBanner.classList.remove('d-none');
+
+                    const btnL = document.getElementById('btnApplyDprLabour');
+                    if (btnL) {
+                        btnL.addEventListener('click', function () {
+                            amtInput.value = data.manpower_cost.toFixed(2);
+                            if (data.manpower_list && data.manpower_list.length > 0) {
+                                const first = data.manpower_list[0];
+                                partInput.value = `${data.total_workers} Workers (${first.category}) as per DPR #${data.report_id}`;
+                            } else {
+                                partInput.value = `${data.total_workers} Labourers as per Daily Report #${data.report_id}`;
+                            }
+                        });
+                    }
+
+                    const btnM = document.getElementById('btnApplyDprMach');
+                    if (btnM) {
+                        btnM.addEventListener('click', function () {
+                            amtInput.value = data.machinery_cost.toFixed(2);
+                            if (data.machinery_list && data.machinery_list.length > 0) {
+                                const m = data.machinery_list[0];
+                                partInput.value = `${m.name} (${m.usage} ${m.basis}) as per DPR #${data.report_id}`;
+                            } else {
+                                partInput.value = `Site Machinery rental as per Daily Report #${data.report_id}`;
+                            }
+                        });
+                    }
+                } else {
+                    dprBanner.innerHTML = `
+                        <div class="alert alert-light border py-1 px-2 mb-0 extra-small text-muted">
+                            <i class="bi bi-info-circle me-1"></i>No Daily Report submitted for this site on ${dateVal} yet.
+                        </div>
+                    `;
+                    dprBanner.classList.remove('d-none');
+                }
+            })
+            .catch(() => {
+                dprBanner.classList.add('d-none');
+            });
+    }
+
+    if (siteSelect) siteSelect.addEventListener('change', checkDpr);
+    if (dateInput) dateInput.addEventListener('change', checkDpr);
+});
+</script>
 {% endblock %}

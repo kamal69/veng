@@ -1,0 +1,256 @@
+{% extends 'base.html' %}
+{% load custom_filters humanize %}
+
+{% block title %}Site Expense & Daily Report Audit - Vikas Engineering{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+    <div>
+        <h3 class="fw-bold text-dark mb-1">
+            <i class="bi bi-shield-check text-success me-2"></i> Site Expense &amp; Daily Report Audit
+        </h3>
+        <p class="text-muted small mb-0">Cross-reconciliation between Daily Progress Reports (DPR) and Actual Cash Ledger Expenses.</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{% url 'report_create' %}" class="btn btn-outline-primary btn-sm">
+            <i class="bi bi-plus-circle me-1"></i> + New Daily Report
+        </a>
+        <a href="{% url 'expenses:transfers_list' %}" class="btn btn-outline-info btn-sm">
+            <i class="bi bi-arrow-left-right me-1"></i> Transfers History
+        </a>
+    </div>
+</div>
+
+<!-- KPI SUMMARY STATS -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+        <div class="card shadow-sm border-0 border-start border-primary border-4 p-3 h-100">
+            <div class="small text-muted fw-semibold">DPR Estimated Cost</div>
+            <div class="fs-4 fw-bold text-primary mt-1">{{ tot_dpr_cost|inr_format }}</div>
+            <div class="extra-small text-muted mt-1"><i class="bi bi-journal-text me-1"></i>From Approved / Draft DPRs</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card shadow-sm border-0 border-start border-danger border-4 p-3 h-100">
+            <div class="small text-muted fw-semibold">Actual Cash Spent</div>
+            <div class="fs-4 fw-bold text-danger mt-1">{{ tot_cash_spent|inr_format }}</div>
+            <div class="extra-small text-muted mt-1"><i class="bi bi-cash-stack me-1"></i>From Employee Cash Ledgers</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card shadow-sm border-0 border-start {% if net_variance >= 0 %}border-warning{% else %}border-success{% endif %} border-4 p-3 h-100">
+            <div class="small text-muted fw-semibold">Net Variance</div>
+            <div class="fs-4 fw-bold {% if net_variance > 0 %}text-danger{% elif net_variance < 0 %}text-success{% else %}text-muted{% endif %} mt-1">
+                {% if net_variance > 0 %}+{% endif %}{{ net_variance|inr_format }}
+            </div>
+            <div class="extra-small text-muted mt-1">Difference (Actual - DPR)</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card shadow-sm border-0 border-start border-info border-4 p-3 h-100">
+            <div class="small text-muted fw-semibold">Audit Breakdown</div>
+            <div class="d-flex flex-wrap gap-1 mt-2">
+                <span class="badge bg-success bg-opacity-25 text-success extra-small">{{ count_matched }} Matched</span>
+                <span class="badge bg-warning bg-opacity-25 text-dark extra-small">{{ count_discrepancy }} Variances</span>
+                <span class="badge bg-danger bg-opacity-25 text-danger extra-small">{{ count_expense_no_report }} No DPR</span>
+                <span class="badge bg-secondary bg-opacity-25 text-secondary extra-small">{{ count_report_no_expense }} No Cash</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- FILTER CARD -->
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-body p-3">
+        <form method="get" class="row g-2 align-items-center">
+            <div class="col-12 col-md-4">
+                <label class="form-label extra-small fw-semibold text-muted mb-1">Site</label>
+                <select name="site_id" class="form-select form-select-sm">
+                    <option value="">-- All Construction Sites --</option>
+                    {% for s in report_sites %}
+                        <option value="{{ s.id }}" {% if selected_site_id == s.id|stringformat:"s" %}selected{% endif %}>{{ s.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label extra-small fw-semibold text-muted mb-1">Start Date</label>
+                <input type="date" name="start_date" class="form-control form-control-sm" value="{{ start_date }}">
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label extra-small fw-semibold text-muted mb-1">End Date</label>
+                <input type="date" name="end_date" class="form-control form-control-sm" value="{{ end_date }}">
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label extra-small fw-semibold text-muted mb-1">Status</label>
+                <select name="status" class="form-select form-select-sm">
+                    <option value="">All Statuses</option>
+                    <option value="MATCHED" {% if status_filter == 'MATCHED' %}selected{% endif %}>Matched (Aligned)</option>
+                    <option value="VARIANCE" {% if status_filter == 'VARIANCE' %}selected{% endif %}>Cost Variance</option>
+                    <option value="EXPENSE_WITHOUT_REPORT" {% if status_filter == 'EXPENSE_WITHOUT_REPORT' %}selected{% endif %}>Cash Paid (No DPR)</option>
+                    <option value="REPORT_ONLY" {% if status_filter == 'REPORT_ONLY' %}selected{% endif %}>DPR Only (No Cash)</option>
+                </select>
+            </div>
+            <div class="col-6 col-md-2 d-flex align-items-end gap-1">
+                <button type="submit" class="btn btn-primary btn-sm w-100">
+                    <i class="bi bi-funnel"></i> Filter
+                </button>
+                <a href="{% url 'site_reconciliation' %}" class="btn btn-outline-secondary btn-sm" title="Reset">
+                    <i class="bi bi-arrow-counterclockwise"></i>
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- AUDIT RECONCILIATION TABLE -->
+<div class="card shadow-sm border-0">
+    <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+        <h6 class="fw-bold text-dark mb-0">
+            <i class="bi bi-table text-primary me-2"></i> Site-Wise Reconciliation Ledger ({{ records|length }} Records)
+        </h6>
+        <div class="extra-small text-muted">
+            <span class="badge bg-success me-1">Matched</span> Fully aligned &bull;
+            <span class="badge bg-warning text-dark me-1">Variance</span> Cost diff &bull;
+            <span class="badge bg-danger">Missing DPR</span> Action required
+        </div>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light extra-small text-uppercase text-muted">
+                <tr>
+                    <th style="min-width: 140px;">Date &amp; Site</th>
+                    <th style="min-width: 220px;">Today Work (DPR)</th>
+                    <th style="min-width: 170px;">Labour Verification</th>
+                    <th style="min-width: 170px;">Machinery Verification</th>
+                    <th style="min-width: 100px;">Other Cash</th>
+                    <th style="min-width: 130px;" class="text-end">DPR Cost vs Paid</th>
+                    <th style="min-width: 120px;" class="text-center">Audit Status</th>
+                    <th style="min-width: 90px;" class="text-center">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="small">
+                {% for r in records %}
+                <tr class="{% if r.status == 'EXPENSE_WITHOUT_REPORT' %}table-danger bg-opacity-10{% elif r.status == 'VARIANCE' %}table-warning bg-opacity-10{% endif %}">
+                    <!-- Date & Site -->
+                    <td>
+                        <div class="fw-bold text-dark">{{ r.date|date:"d M Y" }}</div>
+                        <div class="text-primary fw-semibold extra-small">{{ r.site_name }}</div>
+                    </td>
+
+                    <!-- Today Work Done -->
+                    <td>
+                        {% if r.report %}
+                            <div class="fw-medium text-dark line-clamp-2" title="{{ r.dpr_work }}">
+                                {{ r.dpr_work|truncatechars:100|default:"-- No work description entered --" }}
+                            </div>
+                            <div class="extra-small text-muted mt-1">
+                                <i class="bi bi-person me-1"></i>DPR #{{ r.report.id }} by {{ r.report.reported_by_name }}
+                            </div>
+                        {% else %}
+                            <span class="badge bg-danger bg-opacity-10 text-danger extra-small">
+                                <i class="bi bi-exclamation-triangle me-1"></i>No Daily Report Submitted!
+                            </span>
+                            <div class="extra-small text-muted mt-1">Expenses paid on site without DPR</div>
+                        {% endif %}
+                    </td>
+
+                    <!-- Labour Verification -->
+                    <td>
+                        <div class="d-flex justify-content-between extra-small">
+                            <span class="text-muted">DPR ({{ r.dpr_workers }} wkr):</span>
+                            <span class="fw-semibold">{{ r.dpr_manpower_cost|inr_format }}</span>
+                        </div>
+                        <div class="d-flex justify-content-between extra-small mt-1">
+                            <span class="text-muted">Cash Paid:</span>
+                            <span class="fw-bold text-danger">{{ r.actual_labour_paid|inr_format }}</span>
+                        </div>
+                        {% if r.dpr_manpower_cost != r.actual_labour_paid %}
+                            <div class="extra-small text-warning mt-1">
+                                Diff: ₹{{ r.actual_labour_paid|subtract:r.dpr_manpower_cost|floatformat:2 }}
+                            </div>
+                        {% endif %}
+                    </td>
+
+                    <!-- Machinery Verification -->
+                    <td>
+                        <div class="d-flex justify-content-between extra-small">
+                            <span class="text-muted">DPR ({{ r.dpr_machines_count }} mch):</span>
+                            <span class="fw-semibold">{{ r.dpr_machinery_cost|inr_format }}</span>
+                        </div>
+                        <div class="d-flex justify-content-between extra-small mt-1">
+                            <span class="text-muted">Cash Paid:</span>
+                            <span class="fw-bold text-danger">{{ r.actual_machinery_paid|inr_format }}</span>
+                        </div>
+                        {% if r.dpr_machinery_cost != r.actual_machinery_paid %}
+                            <div class="extra-small text-warning mt-1">
+                                Diff: ₹{{ r.actual_machinery_paid|subtract:r.dpr_machinery_cost|floatformat:2 }}
+                            </div>
+                        {% endif %}
+                    </td>
+
+                    <!-- Other Cash -->
+                    <td>
+                        <div class="fw-semibold text-secondary">{{ r.actual_other_paid|inr_format }}</div>
+                        <div class="extra-small text-muted">{{ r.cash_txns|length }} vouchers</div>
+                    </td>
+
+                    <!-- DPR Cost vs Paid -->
+                    <td class="text-end">
+                        <div class="extra-small text-muted">DPR: {{ r.dpr_total_cost|inr_format }}</div>
+                        <div class="fw-bold text-dark">Paid: {{ r.actual_total_paid|inr_format }}</div>
+                        {% if r.total_variance != 0 %}
+                            <div class="extra-small fw-bold {% if r.total_variance > 0 %}text-danger{% else %}text-success{% endif %}">
+                                {% if r.total_variance > 0 %}+{% endif %}{{ r.total_variance|inr_format }}
+                            </div>
+                        {% endif %}
+                    </td>
+
+                    <!-- Status -->
+                    <td class="text-center">
+                        {% if r.status == 'MATCHED' %}
+                            <span class="badge bg-success py-1 px-2">
+                                <i class="bi bi-check-circle me-1"></i>Matched
+                            </span>
+                        {% elif r.status == 'VARIANCE' %}
+                            <span class="badge bg-warning text-dark py-1 px-2" title="Expense amount differs from DPR">
+                                <i class="bi bi-exclamation-circle me-1"></i>Variance
+                            </span>
+                        {% elif r.status == 'EXPENSE_WITHOUT_REPORT' %}
+                            <span class="badge bg-danger py-1 px-2" title="Money spent in Cash Ledger but no DPR exists for this date">
+                                <i class="bi bi-x-circle me-1"></i>Missing DPR
+                            </span>
+                        {% elif r.status == 'REPORT_ONLY' %}
+                            <span class="badge bg-secondary bg-opacity-75 py-1 px-2" title="DPR filed; no cash expenses paid yet">
+                                <i class="bi bi-info-circle me-1"></i>DPR Only
+                            </span>
+                        {% endif %}
+                    </td>
+
+                    <!-- Actions -->
+                    <td class="text-center">
+                        <div class="btn-group btn-group-sm">
+                            {% if r.report %}
+                                <a href="{% url 'report_detail' r.report.id %}" class="btn btn-outline-primary" title="View Daily Report">
+                                    <i class="bi bi-eye"></i>
+                                </a>
+                            {% else %}
+                                <a href="{% url 'report_create' %}?site_id={{ r.site_id }}&date={{ r.date|date:'Y-m-d' }}" class="btn btn-outline-danger" title="Create Missing DPR">
+                                    <i class="bi bi-plus-lg"></i> DPR
+                                </a>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="8" class="text-center py-5 text-muted">
+                        <i class="bi bi-inbox fs-1 d-block mb-2 text-secondary opacity-50"></i>
+                        No reconciliation records found for the selected filters.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

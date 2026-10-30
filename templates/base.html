@@ -78,6 +78,11 @@
                                 <i class="bi bi-plus-circle-dotted text-warning"></i> + New Site Report
                             </a>
                         </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.resolver_match.url_name == 'site_reconciliation' %}active{% endif %}" href="{% url 'site_reconciliation' %}">
+                                <i class="bi bi-shield-check text-success"></i> Audit &amp; Reconciliation
+                            </a>
+                        </li>
 
                         <!-- EMPLOYEE CASH & EXPENSE SYSTEM -->
                         <li class="sidebar-section-title">Cash & Expenses (Accounting)</li>

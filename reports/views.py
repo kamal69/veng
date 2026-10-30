@@ -274,6 +274,45 @@ def report_detail_view(request, pk):
     can_approve = is_management and report.status == SiteReport.ReportStatus.SUBMITTED
     can_return = is_management and report.status in [SiteReport.ReportStatus.SUBMITTED, SiteReport.ReportStatus.APPROVED]
 
+    # Site Cash Expenses & DPR Reconciliation
+    from expenses.models import CashTransaction, ExpenseSite, ExpenseCategory
+    exp_site = ExpenseSite.objects.filter(name__iexact=report.site.name).first()
+    if exp_site:
+        site_cash_txns = CashTransaction.objects.filter(
+            site=exp_site,
+            transaction_date=report.report_date
+        ).select_related('employee', 'category')
+    else:
+        site_cash_txns = CashTransaction.objects.none()
+
+    actual_labour_paid = site_cash_txns.filter(
+        Q(category__group_type=ExpenseCategory.GroupType.LABOUR) |
+        Q(particulars__icontains='labour') |
+        Q(particulars__icontains='majdoor') |
+        Q(particulars__icontains='mason') |
+        Q(particulars__icontains='mistri')
+    ).aggregate(s=Sum('amount'))['s'] or Decimal('0.00')
+
+    actual_machinery_paid = site_cash_txns.filter(
+        Q(category__group_type__in=[ExpenseCategory.GroupType.MACHINERY, ExpenseCategory.GroupType.VEHICLE]) |
+        Q(particulars__icontains='machin') |
+        Q(particulars__icontains='diesel') |
+        Q(particulars__icontains='fuel') |
+        Q(particulars__icontains='jcb')
+    ).exclude(
+        Q(category__group_type=ExpenseCategory.GroupType.LABOUR) |
+        Q(particulars__icontains='labour')
+    ).aggregate(s=Sum('amount'))['s'] or Decimal('0.00')
+
+    actual_total_cash_spent = site_cash_txns.aggregate(s=Sum('amount'))['s'] or Decimal('0.00')
+    actual_other_paid = actual_total_cash_spent - actual_labour_paid - actual_machinery_paid
+    if actual_other_paid < Decimal('0.00'):
+        actual_other_paid = Decimal('0.00')
+
+    labour_variance = actual_labour_paid - report.total_manpower_cost
+    machinery_variance = actual_machinery_paid - report.total_rental_cost
+    total_variance = actual_total_cash_spent - report.total_site_cost
+
     return render(request, 'reports/report_detail.html', {
         'report': report,
         'manpower_entries': manpower_entries,
@@ -281,6 +320,14 @@ def report_detail_view(request, pk):
         'employee_visits': employee_visits,
         'tool_entries': tool_entries,
         'audit_logs': audit_logs,
+        'site_cash_txns': site_cash_txns,
+        'actual_labour_paid': actual_labour_paid,
+        'actual_machinery_paid': actual_machinery_paid,
+        'actual_other_paid': actual_other_paid,
+        'actual_total_cash_spent': actual_total_cash_spent,
+        'labour_variance': labour_variance,
+        'machinery_variance': machinery_variance,
+        'total_variance': total_variance,
         'can_edit': can_edit,
         'can_submit': can_submit,
         'can_approve': can_approve,
@@ -1096,3 +1143,257 @@ def api_check_employee_visit(request):
         'valid': valid,
         'message': msg
     })
+
+
+@login_required
+def api_daily_report_summary(request):
+    """
+    JSON API called dynamically from Expense modals to cross-verify and autofill Daily Report data.
+    """
+    import datetime
+    site_id = request.GET.get('site_id')
+    site_name = request.GET.get('site_name')
+    date_str = request.GET.get('date')
+
+    if not date_str:
+        return JsonResponse({'has_report': False, 'message': 'Date is required'})
+
+    try:
+        req_date = datetime.datetime.strptime(date_str, '%Y-%m-%d').date()
+    except ValueError:
+        return JsonResponse({'has_report': False, 'message': 'Invalid date format'})
+
+    from expenses.models import ExpenseSite
+    site = None
+    if site_id and site_id.isdigit():
+        exp_site = ExpenseSite.objects.filter(id=int(site_id)).first()
+        if exp_site:
+            site = Site.objects.filter(name__iexact=exp_site.name).first()
+        if not site:
+            site = Site.objects.filter(id=int(site_id)).first()
+
+    if not site and site_name:
+        site = Site.objects.filter(name__iexact=site_name.strip()).first()
+
+    if not site:
+        return JsonResponse({'has_report': False, 'message': 'Site not found'})
+
+    report = SiteReport.objects.filter(site=site, report_date=req_date).first()
+    if not report:
+        return JsonResponse({
+            'has_report': False,
+            'site_name': site.name,
+            'date': str(req_date),
+            'message': f"No Daily Report found for {site.name} on {req_date}."
+        })
+
+    manpower_list = []
+    for m in report.manpower_entries.all():
+        manpower_list.append({
+            'category': m.category,
+            'type': m.type,
+            'count': m.worker_count,
+            'rate': float(m.rate_per_head),
+            'total': float(m.total_cost),
+        })
+
+    machinery_list = []
+    for mac in report.machinery_entries.all():
+        machinery_list.append({
+            'name': mac.machine_name,
+            'basis': mac.billing_basis,
+            'usage': float(mac.usage_value),
+            'rate': float(mac.rate),
+            'total': float(mac.rental_cost),
+        })
+
+    return JsonResponse({
+        'has_report': True,
+        'report_id': report.id,
+        'site_name': site.name,
+        'date': str(report.report_date),
+        'work_done_today': report.work_done_today or '',
+        'remarks': report.remarks or '',
+        'total_workers': report.total_manpower_count,
+        'manpower_cost': float(report.total_manpower_cost),
+        'manpower_list': manpower_list,
+        'total_machinery': report.machinery_entries.count(),
+        'machinery_cost': float(report.total_rental_cost),
+        'machinery_list': machinery_list,
+        'total_site_cost': float(report.total_site_cost),
+        'status': report.status,
+    })
+
+
+@login_required
+def site_reconciliation_view(request):
+    """
+    Unified Site Expense vs Daily Report (DPR) Audit & Reconciliation View.
+    Cross-checks whether daily reported work, labour count, and machinery match cash paid.
+    """
+    import datetime
+    from expenses.models import CashTransaction, ExpenseSite, ExpenseCategory
+    from django.db.models import Sum, Q
+
+    selected_site_id = request.GET.get('site_id', '').strip()
+    start_date_str = request.GET.get('start_date', '').strip()
+    end_date_str = request.GET.get('end_date', '').strip()
+    status_filter = request.GET.get('status', '').strip().upper()
+
+    # Sites list
+    report_sites = Site.objects.filter(is_active=True).order_by('name')
+
+    # Date defaults: last 30 days if not provided
+    today = timezone.localdate()
+    default_start = today - datetime.timedelta(days=30)
+    try:
+        start_date = datetime.datetime.strptime(start_date_str, '%Y-%m-%d').date() if start_date_str else default_start
+    except ValueError:
+        start_date = default_start
+
+    try:
+        end_date = datetime.datetime.strptime(end_date_str, '%Y-%m-%d').date() if end_date_str else today
+    except ValueError:
+        end_date = today
+
+    # Query reports
+    reports_qs = SiteReport.objects.filter(
+        report_date__gte=start_date,
+        report_date__lte=end_date
+    ).select_related('site', 'reported_by_user')
+
+    if selected_site_id and selected_site_id.isdigit():
+        reports_qs = reports_qs.filter(site_id=int(selected_site_id))
+
+    # Query cash transactions
+    txns_qs = CashTransaction.objects.filter(
+        transaction_date__gte=start_date,
+        transaction_date__lte=end_date,
+        txn_type=CashTransaction.TxnType.EXPENSE,
+        site__isnull=False
+    ).select_related('site', 'employee', 'category')
+
+    if selected_site_id and selected_site_id.isdigit():
+        site_obj = Site.objects.filter(id=int(selected_site_id)).first()
+        if site_obj:
+            exp_site_obj = ExpenseSite.objects.filter(name__iexact=site_obj.name).first()
+            if exp_site_obj:
+                txns_qs = txns_qs.filter(site=exp_site_obj)
+            else:
+                txns_qs = txns_qs.none()
+
+    # Collect all unique (site_name_normalized, date) keys
+    reconciliation_dict = {}
+
+    for rep in reports_qs:
+        key = (rep.site.name.strip().lower(), rep.report_date)
+        reconciliation_dict[key] = {
+            'site_name': rep.site.name,
+            'date': rep.report_date,
+            'report': rep,
+            'dpr_work': rep.work_done_today or '',
+            'dpr_workers': rep.total_manpower_count,
+            'dpr_manpower_cost': rep.total_manpower_cost,
+            'dpr_machines_count': rep.machinery_entries.count(),
+            'dpr_machinery_cost': rep.total_rental_cost,
+            'dpr_total_cost': rep.total_site_cost,
+            'actual_labour_paid': Decimal('0.00'),
+            'actual_machinery_paid': Decimal('0.00'),
+            'actual_other_paid': Decimal('0.00'),
+            'actual_total_paid': Decimal('0.00'),
+            'cash_txns': [],
+            'status': 'REPORT_ONLY',
+        }
+
+    for txn in txns_qs:
+        key = (txn.site.name.strip().lower(), txn.transaction_date)
+        if key not in reconciliation_dict:
+            reconciliation_dict[key] = {
+                'site_name': txn.site.name,
+                'date': txn.transaction_date,
+                'report': None,
+                'dpr_work': '',
+                'dpr_workers': 0,
+                'dpr_manpower_cost': Decimal('0.00'),
+                'dpr_machines_count': 0,
+                'dpr_machinery_cost': Decimal('0.00'),
+                'dpr_total_cost': Decimal('0.00'),
+                'actual_labour_paid': Decimal('0.00'),
+                'actual_machinery_paid': Decimal('0.00'),
+                'actual_other_paid': Decimal('0.00'),
+                'actual_total_paid': Decimal('0.00'),
+                'cash_txns': [],
+                'status': 'EXPENSE_WITHOUT_REPORT',
+            }
+
+        item = reconciliation_dict[key]
+        item['cash_txns'].append(txn)
+        item['actual_total_paid'] += txn.amount
+
+        # Categorize
+        grp = txn.category.group_type if txn.category else ''
+        part = (txn.particulars or '').lower()
+        if grp == ExpenseCategory.GroupType.LABOUR or 'labour' in part or 'majdoor' in part or 'mason' in part or 'mistri' in part:
+            item['actual_labour_paid'] += txn.amount
+        elif grp in [ExpenseCategory.GroupType.MACHINERY, ExpenseCategory.GroupType.VEHICLE] or 'machin' in part or 'diesel' in part or 'fuel' in part or 'jcb' in part:
+            item['actual_machinery_paid'] += txn.amount
+        else:
+            item['actual_other_paid'] += txn.amount
+
+    # Classify status & calculate variances
+    records = []
+    tot_dpr_cost = Decimal('0.00')
+    tot_cash_spent = Decimal('0.00')
+    count_matched = 0
+    count_discrepancy = 0
+    count_expense_no_report = 0
+    count_report_no_expense = 0
+
+    for key, item in reconciliation_dict.items():
+        has_rep = item['report'] is not None
+        has_cash = len(item['cash_txns']) > 0
+
+        tot_dpr_cost += item['dpr_total_cost']
+        tot_cash_spent += item['actual_total_paid']
+
+        variance = item['actual_total_paid'] - item['dpr_total_cost']
+        item['total_variance'] = variance
+
+        if has_rep and has_cash:
+            if abs(variance) < Decimal('1.00'):
+                item['status'] = 'MATCHED'
+                count_matched += 1
+            else:
+                item['status'] = 'VARIANCE'
+                count_discrepancy += 1
+        elif has_rep and not has_cash:
+            item['status'] = 'REPORT_ONLY'
+            count_report_no_expense += 1
+        else:
+            item['status'] = 'EXPENSE_WITHOUT_REPORT'
+            count_expense_no_report += 1
+
+        if not status_filter or item['status'] == status_filter:
+            records.append(item)
+
+    # Sort chronologically descending
+    records.sort(key=lambda x: (x['date'], x['site_name']), reverse=True)
+
+    context = {
+        'records': records,
+        'report_sites': report_sites,
+        'selected_site_id': selected_site_id,
+        'start_date': start_date.strftime('%Y-%m-%d'),
+        'end_date': end_date.strftime('%Y-%m-%d'),
+        'status_filter': status_filter,
+        'tot_dpr_cost': tot_dpr_cost,
+        'tot_cash_spent': tot_cash_spent,
+        'net_variance': tot_cash_spent - tot_dpr_cost,
+        'count_matched': count_matched,
+        'count_discrepancy': count_discrepancy,
+        'count_expense_no_report': count_expense_no_report,
+        'count_report_no_expense': count_report_no_expense,
+        'page_title': 'Site Expense & Daily Report Audit Reconciliation',
+    }
+    return render(request, 'reports/site_reconciliation.html', context)
+
