@@ -19,16 +19,19 @@
     <div class="container-fluid p-0">
         <div class="row g-0">
             {% if user.is_authenticated %}
-            <!-- SIDEBAR -->
-            <aside class="col-12 col-md-3 col-lg-2 sidebar d-md-block collapse no-print" id="sidebarMenu">
+            <!-- SIDEBAR (Offcanvas on mobile, static on desktop) -->
+            <aside class="col-12 col-md-3 col-lg-2 offcanvas-md offcanvas-start sidebar no-print" tabindex="-1" id="sidebarMenu" aria-labelledby="sidebarMenuLabel">
                 <div class="d-flex flex-column h-100">
-                    <a href="{% url 'dashboard' %}" class="sidebar-brand text-decoration-none d-flex align-items-center gap-2">
-                        <i class="bi bi-cone-striped fs-3 text-warning"></i>
-                        <div>
-                            <div class="lh-1 text-white fw-bold">VIKAS ENG</div>
-                            <small class="text-secondary" style="font-size: 0.7rem;">Site & Cost Management</small>
-                        </div>
-                    </a>
+                    <div class="sidebar-brand d-flex align-items-center justify-content-between">
+                        <a href="{% url 'dashboard' %}" class="text-decoration-none d-flex align-items-center gap-2 text-white">
+                            <i class="bi bi-cone-striped fs-3 text-warning"></i>
+                            <div>
+                                <div class="lh-1 text-white fw-bold">VIKAS ENG</div>
+                                <small class="text-secondary" style="font-size: 0.7rem;">Site & Cost Management</small>
+                            </div>
+                        </a>
+                        <button type="button" class="btn-close btn-close-white d-md-none" data-bs-dismiss="offcanvas" data-bs-target="#sidebarMenu" aria-label="Close"></button>
+                    </div>
 
                     <!-- User Pill in Sidebar -->
                     <div class="p-3 mx-2 my-2 rounded bg-dark border border-secondary border-opacity-25 text-white">
@@ -139,22 +142,28 @@
             <main class="{% if user.is_authenticated %}col-12 col-md-9 col-lg-10{% else %}col-12{% endif %} ms-auto p-0 min-vh-100 d-flex flex-column">
                 {% if user.is_authenticated %}
                 <!-- TOP NAVBAR -->
-                <nav class="navbar navbar-expand-lg top-navbar px-4 py-2 sticky-top no-print">
+                <nav class="navbar navbar-expand top-navbar px-3 px-md-4 py-2 sticky-top no-print">
                     <div class="container-fluid p-0">
-                        <button class="btn btn-sm btn-outline-secondary d-md-none me-2" type="button" data-bs-toggle="collapse" data-bs-target="#sidebarMenu">
+                        <button class="btn btn-sm btn-outline-secondary d-md-none me-2" type="button" data-bs-toggle="offcanvas" data-bs-target="#sidebarMenu" aria-controls="sidebarMenu" aria-label="Toggle navigation">
                             <i class="bi bi-list fs-5"></i>
                         </button>
-                        
-                        <div class="d-flex align-items-center gap-2">
-                            <span class="text-muted small">Timezone: Asia/Kolkata (IST)</span>
+
+                        <!-- Mobile Brand Logo -->
+                        <div class="d-md-none d-flex align-items-center gap-1 me-2">
+                            <i class="bi bi-cone-striped text-warning fs-5"></i>
+                            <span class="fw-bold text-dark fs-6 tracking-tight">VIKAS ENG</span>
+                        </div>
+
+                        <div class="d-none d-sm-flex align-items-center gap-2">
+                            <span class="text-muted small">Asia/Kolkata (IST)</span>
                             <span class="badge bg-light text-dark border">
                                 <i class="bi bi-calendar3 me-1"></i> {% now "d M Y" %}
                             </span>
                         </div>
 
-                        <div class="d-flex align-items-center gap-3 ms-auto">
-                            <a href="{% url 'report_create' %}" class="btn btn-primary btn-sm d-flex align-items-center gap-1 shadow-sm">
-                                <i class="bi bi-plus-lg"></i> <span class="d-none d-sm-inline">Add Daily Report</span>
+                        <div class="d-flex align-items-center gap-2 ms-auto">
+                            <a href="{% url 'report_create' %}" class="btn btn-primary btn-sm d-flex align-items-center gap-1 shadow-sm px-2 px-sm-3">
+                                <i class="bi bi-plus-lg"></i> <span class="d-none d-sm-inline">Add Daily Report</span><span class="d-sm-none">Report</span>
                             </a>
                         </div>
                     </div>
@@ -162,7 +171,7 @@
                 {% endif %}
 
                 <!-- FLASH MESSAGES -->
-                <div class="px-4 pt-3 no-print">
+                <div class="px-3 px-md-4 pt-3 no-print">
                     {% if messages %}
                         {% for message in messages %}
                             <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show shadow-sm" role="alert">
@@ -183,12 +192,12 @@
                 </div>
 
                 <!-- PAGE CONTENT -->
-                <div class="p-4 flex-grow-1">
+                <div class="p-3 p-md-4 flex-grow-1">
                     {% block content %}{% endblock %}
                 </div>
 
                 <!-- FOOTER -->
-                <footer class="mt-auto py-3 px-4 bg-white border-top text-center text-muted small no-print">
+                <footer class="mt-auto py-3 px-3 px-md-4 bg-white border-top text-center text-muted small no-print">
                     <div>
                         <span>&copy; {% now "Y" %} Vikas Engineering Works. All rights reserved.</span>
                     </div>
