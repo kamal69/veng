@@ -275,11 +275,11 @@
                             </tr>
                             {% endfor %}
                         {% else %}
-                            <!-- Default 1 empty machinery row -->
+                            <!-- Default 1 clean machinery row -->
                             <tr>
                                 <td>
-                                    <input type="text" name="machine_name[]" class="form-control form-control-sm" placeholder="e.g. JCB 3DX Excavator" value="JCB 3DX Excavator">
-                                    <input type="text" name="machine_remarks[]" class="form-control form-control-sm mt-1 text-muted small" placeholder="Remarks (optional)" value="Foundation excavation">
+                                    <input type="text" name="machine_name[]" class="form-control form-control-sm" placeholder="e.g. JCB, Crane, Roller (optional)">
+                                    <input type="text" name="machine_remarks[]" class="form-control form-control-sm mt-1 text-muted small" placeholder="Remarks (optional)">
                                 </td>
                                 <td>
                                     <select name="machine_ownership[]" class="form-select form-select-sm mac-ownership" onchange="recalcMachineryRow(this)">
@@ -289,23 +289,23 @@
                                     </select>
                                 </td>
                                 <td>
-                                    <input type="number" name="machine_quantity[]" class="form-control form-control-sm text-end mac-qty" min="0.1" step="0.5" value="1.0" oninput="recalcMachineryRow(this)">
+                                    <input type="number" name="machine_quantity[]" class="form-control form-control-sm text-end mac-qty" min="0" step="0.5" value="0.0" oninput="recalcMachineryRow(this)">
                                 </td>
                                 <td>
-                                    <select name="machine_billing_basis[]" class="form-select form-select-sm mac-basis" onchange="recalcMachineryRow(this)">
+                                    <select name="machine_billing_basis[]" class="form-select form-select-sm mac-basis" onchange="onBillingBasisChange(this)">
                                         {% for b, b_lbl in billing_bases %}
-                                            <option value="{{ b }}" {% if b == 'HOUR' %}selected{% endif %}>{{ b_lbl }}</option>
+                                            <option value="{{ b }}">{{ b_lbl }}</option>
                                         {% endfor %}
                                     </select>
                                 </td>
                                 <td>
-                                    <input type="number" name="machine_usage[]" class="form-control form-control-sm text-end mac-usage" min="0" step="0.5" value="8.0" oninput="recalcMachineryRow(this)">
+                                    <input type="number" name="machine_usage[]" class="form-control form-control-sm text-end mac-usage" min="0" step="0.5" value="0.0" placeholder="Hours or Days" oninput="recalcMachineryRow(this)">
                                 </td>
                                 <td>
-                                    <input type="number" name="machine_rate[]" class="form-control form-control-sm text-end mac-rate" min="0" step="0.01" value="1250.00" oninput="recalcMachineryRow(this)">
+                                    <input type="number" name="machine_rate[]" class="form-control form-control-sm text-end mac-rate" min="0" step="0.01" value="0.00" oninput="recalcMachineryRow(this)">
                                 </td>
                                 <td>
-                                    <input type="text" class="form-control form-control-sm text-end mac-total bg-light fw-bold" readonly value="₹ 10,000.00">
+                                    <input type="text" class="form-control form-control-sm text-end mac-total bg-light fw-bold" readonly value="₹ 0.00">
                                 </td>
                                 <td class="text-center">
                                     <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2" onclick="removeRowConfirm(this)" title="Delete Row">
@@ -687,6 +687,8 @@ function addManpowerRow() {
     `;
     tbody.appendChild(tr);
     recalculateAll();
+    const countInput = tr.querySelector('.mp-count');
+    if (countInput) countInput.focus();
 }
 
 // -------------------------------------------------------------
@@ -712,12 +714,24 @@ function recalcMachineryRow(inputElement) {
     recalculateAll();
 }
 
+function onBillingBasisChange(selectElem) {
+    const tr = selectElem.closest('tr');
+    const basis = selectElem.value;
+    const usageInput = tr.querySelector('.mac-usage');
+    if (basis === 'DAY') {
+        usageInput.placeholder = "Days (e.g. 1)";
+    } else {
+        usageInput.placeholder = "Hours (e.g. 8)";
+    }
+    recalcMachineryRow(selectElem);
+}
+
 function addMachineryRow() {
     const tbody = document.getElementById('machineryBody');
     const tr = document.createElement('tr');
     tr.innerHTML = `
         <td>
-            <input type="text" name="machine_name[]" class="form-control form-control-sm" placeholder="Machine Name (optional)">
+            <input type="text" name="machine_name[]" class="form-control form-control-sm" placeholder="e.g. JCB, Crane, Roller (optional)">
             <input type="text" name="machine_remarks[]" class="form-control form-control-sm mt-1 text-muted small" placeholder="Remarks (optional)">
         </td>
         <td>
@@ -728,17 +742,17 @@ function addMachineryRow() {
             </select>
         </td>
         <td>
-            <input type="number" name="machine_quantity[]" class="form-control form-control-sm text-end mac-qty" min="0.1" step="0.5" value="1.0" oninput="recalcMachineryRow(this)">
+            <input type="number" name="machine_quantity[]" class="form-control form-control-sm text-end mac-qty" min="0" step="0.5" value="0.0" oninput="recalcMachineryRow(this)">
         </td>
         <td>
-            <select name="machine_billing_basis[]" class="form-select form-select-sm mac-basis" onchange="recalcMachineryRow(this)">
+            <select name="machine_billing_basis[]" class="form-select form-select-sm mac-basis" onchange="onBillingBasisChange(this)">
                 {% for b, b_lbl in billing_bases %}
                     <option value="{{ b }}">{{ b_lbl }}</option>
                 {% endfor %}
             </select>
         </td>
         <td>
-            <input type="number" name="machine_usage[]" class="form-control form-control-sm text-end mac-usage" min="0" step="0.5" value="1.0" oninput="recalcMachineryRow(this)">
+            <input type="number" name="machine_usage[]" class="form-control form-control-sm text-end mac-usage" min="0" step="0.5" value="0.0" placeholder="Hours or Days" oninput="recalcMachineryRow(this)">
         </td>
         <td>
             <input type="number" name="machine_rate[]" class="form-control form-control-sm text-end mac-rate" min="0" step="0.01" value="0.00" oninput="recalcMachineryRow(this)">
@@ -754,6 +768,8 @@ function addMachineryRow() {
     `;
     tbody.appendChild(tr);
     recalculateAll();
+    const nameInput = tr.querySelector('input[name="machine_name[]"]');
+    if (nameInput) nameInput.focus();
 }
 
 // -------------------------------------------------------------
@@ -862,6 +878,8 @@ function addEmployeeRow() {
     `;
     tbody.appendChild(tr);
     recalculateAll();
+    const countInput = tr.querySelector('.mp-count');
+    if (countInput) countInput.focus();
 }
 
 function addToolRow() {
@@ -887,6 +905,8 @@ function addToolRow() {
         </td>
     `;
     tbody.appendChild(tr);
+    const toolInput = tr.querySelector('input[name="tool_name[]"]');
+    if (toolInput) toolInput.focus();
 }
 
 // -------------------------------------------------------------
@@ -982,17 +1002,20 @@ function validateBeforeSubmit(event) {
         siteSelect.focus();
         return false;
     }
-    const workDone = document.getElementById('workDoneTextarea');
-    if (!workDone.value.trim()) {
-        alert("Please enter the work done today.");
-        workDone.focus();
-        return false;
-    }
     return true;
 }
 
-// Run initial calculation on page load
+// Run initial calculation on page load & prevent accidental Enter-key submit
 document.addEventListener("DOMContentLoaded", function () {
+    const form = document.getElementById('dailyReportForm');
+    if (form) {
+        form.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && e.target.tagName === 'INPUT') {
+                e.preventDefault();
+                return false;
+            }
+        });
+    }
     recalculateAll();
     checkDuplicateReport();
 });
