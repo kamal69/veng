@@ -19,8 +19,11 @@
     <div class="container-fluid p-0">
         <div class="row g-0">
             {% if user.is_authenticated %}
-            <!-- SIDEBAR (Offcanvas on mobile, static on desktop) -->
-            <aside class="col-md-3 col-lg-2 offcanvas-md offcanvas-start sidebar no-print" tabindex="-1" id="sidebarMenu" aria-labelledby="sidebarMenuLabel">
+            <!-- Mobile Backdrop Overlay -->
+            <div class="mobile-sidebar-backdrop d-md-none" id="mobileBackdrop" onclick="closeMobileSidebar()"></div>
+
+            <!-- SIDEBAR -->
+            <aside class="col-md-3 col-lg-2 sidebar no-print" id="sidebarMenu">
                 <div class="d-flex flex-column h-100">
                     <div class="sidebar-brand d-flex align-items-center justify-content-between">
                         <a href="{% url 'dashboard' %}" class="text-decoration-none d-flex align-items-center gap-2 text-white">
@@ -30,7 +33,10 @@
                                 <small class="text-secondary" style="font-size: 0.7rem;">Site & Cost Management</small>
                             </div>
                         </a>
-                        <button type="button" class="btn-close btn-close-white d-md-none" data-bs-dismiss="offcanvas" data-bs-target="#sidebarMenu" aria-label="Close"></button>
+                        <!-- Mobile Close Button -->
+                        <button type="button" class="btn btn-sm btn-link text-white text-decoration-none d-md-none p-1" onclick="closeMobileSidebar()" aria-label="Close Sidebar">
+                            <i class="bi bi-x-lg fs-5"></i>
+                        </button>
                     </div>
 
                     <!-- User Pill in Sidebar -->
@@ -145,9 +151,8 @@
                 <nav class="navbar navbar-expand top-navbar px-3 px-md-4 py-2 sticky-top no-print">
                     <div class="container-fluid p-0">
                         <button class="btn btn-sm btn-outline-secondary d-md-none me-2" type="button" 
-                                data-bs-toggle="offcanvas" data-bs-target="#sidebarMenu" 
-                                aria-controls="sidebarMenu" aria-label="Toggle navigation"
-                                onclick="toggleMobileSidebar(event)">
+                                onclick="toggleMobileSidebar(event)"
+                                aria-label="Toggle navigation">
                             <i class="bi bi-list fs-5"></i>
                         </button>
 
@@ -212,27 +217,41 @@
     <!-- Bootstrap 5 JS Bundle -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
-    <!-- Mobile Navigation Drawer Handler -->
+    <!-- Reliable Mobile Navigation Drawer Handler -->
     <script>
+    function openMobileSidebar() {
+        var sidebar = document.getElementById('sidebarMenu');
+        var backdrop = document.getElementById('mobileBackdrop');
+        if (sidebar) sidebar.classList.add('mobile-open');
+        if (backdrop) backdrop.classList.add('show');
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeMobileSidebar() {
+        var sidebar = document.getElementById('sidebarMenu');
+        var backdrop = document.getElementById('mobileBackdrop');
+        if (sidebar) sidebar.classList.remove('mobile-open');
+        if (backdrop) backdrop.classList.remove('show');
+        document.body.style.overflow = '';
+    }
+
     function toggleMobileSidebar(e) {
         if (e && e.preventDefault) e.preventDefault();
-        const el = document.getElementById('sidebarMenu');
-        if (el && window.bootstrap) {
-            const bsOffcanvas = bootstrap.Offcanvas.getOrCreateInstance(el);
-            bsOffcanvas.toggle();
+        var sidebar = document.getElementById('sidebarMenu');
+        if (sidebar && sidebar.classList.contains('mobile-open')) {
+            closeMobileSidebar();
+        } else {
+            openMobileSidebar();
         }
     }
 
     document.addEventListener('DOMContentLoaded', function() {
-        // Auto-close offcanvas when clicking any navigation link on mobile
-        document.querySelectorAll('#sidebarMenu .nav-link').forEach(function(link) {
+        // Auto-close sidebar when clicking any navigation link on mobile
+        var links = document.querySelectorAll('#sidebarMenu .nav-link, #sidebarMenu a');
+        links.forEach(function(link) {
             link.addEventListener('click', function() {
                 if (window.innerWidth < 768) {
-                    const el = document.getElementById('sidebarMenu');
-                    if (el && window.bootstrap) {
-                        const bsOffcanvas = bootstrap.Offcanvas.getInstance(el);
-                        if (bsOffcanvas) bsOffcanvas.hide();
-                    }
+                    closeMobileSidebar();
                 }
             });
         });

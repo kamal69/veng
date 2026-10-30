@@ -35,7 +35,7 @@ h4, .h4 { font-size: calc(1.0rem + 0.2vw); font-weight: 600; }
 h5, .h5 { font-size: 1.05rem; font-weight: 600; }
 h6, .h6 { font-size: 0.9rem; font-weight: 600; }
 
-/* Sidebar styling (Desktop and Offcanvas Mobile) */
+/* Sidebar styling (Desktop and Mobile Drawer) */
 .sidebar {
     background-color: var(--sidebar-bg);
     min-height: 100vh;
@@ -43,27 +43,48 @@ h6, .h6 { font-size: 0.9rem; font-weight: 600; }
 }
 
 @media (max-width: 767.98px) {
-    .sidebar.offcanvas-md {
+    .sidebar {
         position: fixed !important;
         top: 0 !important;
         bottom: 0 !important;
         left: 0 !important;
-        width: 285px !important;
-        max-width: 85vw !important;
+        width: 280px !important;
+        max-width: 82vw !important;
+        height: 100vh !important;
         min-height: 100vh !important;
         background-color: var(--sidebar-bg) !important;
-        z-index: 1060 !important; /* Critical: Must be above backdrop (1050) so sidebar links are directly clickable */
+        z-index: 1060 !important; /* Critical: Must be above backdrop (1055) so all links are 100% clickable */
         border-right: 1px solid rgba(255, 255, 255, 0.1);
-        box-shadow: 4px 0 25px rgba(0, 0, 0, 0.5) !important;
-        visibility: hidden;
-        transform: translateX(-100%);
-        transition: transform 0.25s ease-in-out, visibility 0.25s ease-in-out !important;
+        transform: translateX(-100%) !important;
+        transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1) !important;
         overflow-y: auto !important;
         -webkit-overflow-scrolling: touch;
+        box-shadow: none !important;
     }
-    .sidebar.offcanvas-md.show {
-        visibility: visible !important;
+
+    .sidebar.mobile-open {
         transform: translateX(0) !important;
+        box-shadow: 4px 0 25px rgba(0, 0, 0, 0.5) !important;
+    }
+
+    .mobile-sidebar-backdrop {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(15, 23, 42, 0.6);
+        backdrop-filter: blur(2px);
+        -webkit-backdrop-filter: blur(2px);
+        z-index: 1055;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.25s ease-in-out;
+    }
+
+    .mobile-sidebar-backdrop.show {
+        opacity: 1;
+        pointer-events: auto;
     }
 }
 
