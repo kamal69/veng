@@ -338,15 +338,21 @@ def report_create_view(request):
         machinery_remarks = request.POST.getlist('machine_remarks[]')
 
         for i in range(len(machines)):
-            if machines[i].strip():
+            m_name = machines[i].strip() if i < len(machines) else ''
+            m_rate = machinery_rates[i].strip() if i < len(machinery_rates) else ''
+            m_usage = usages[i].strip() if i < len(usages) else ''
+            m_rem = machinery_remarks[i].strip() if i < len(machinery_remarks) else ''
+            has_usage = bool(m_usage and m_usage not in ('0', '0.0', '0.00'))
+            has_rate = bool(m_rate and m_rate not in ('0', '0.0', '0.00'))
+            if m_name or has_usage or has_rate or m_rem:
                 machinery_rows.append({
-                    'machine_name': machines[i],
+                    'machine_name': m_name if m_name else "Site Machinery / Equipment",
                     'ownership': ownerships[i] if i < len(ownerships) else 'RENTAL',
-                    'quantity': quantities[i] if i < len(quantities) else '1',
-                    'billing_basis': billing_bases[i] if i < len(billing_bases) else 'DAY',
-                    'usage_value': usages[i] if i < len(usages) else '1',
-                    'rate': machinery_rates[i] if i < len(machinery_rates) else '0',
-                    'remarks': machinery_remarks[i] if i < len(machinery_remarks) else '',
+                    'quantity': quantities[i] if (i < len(quantities) and quantities[i]) else '1',
+                    'billing_basis': billing_bases[i] if i < len(billing_bases) else 'HOUR',
+                    'usage_value': m_usage if m_usage else '0',
+                    'rate': m_rate if m_rate else '0',
+                    'remarks': m_rem,
                 })
 
         # Parse Employee Visits rows
@@ -499,15 +505,21 @@ def report_edit_view(request, pk):
         machinery_remarks = request.POST.getlist('machine_remarks[]')
 
         for i in range(len(machines)):
-            if machines[i].strip():
+            m_name = machines[i].strip() if i < len(machines) else ''
+            m_rate = machinery_rates[i].strip() if i < len(machinery_rates) else ''
+            m_usage = usages[i].strip() if i < len(usages) else ''
+            m_rem = machinery_remarks[i].strip() if i < len(machinery_remarks) else ''
+            has_usage = bool(m_usage and m_usage not in ('0', '0.0', '0.00'))
+            has_rate = bool(m_rate and m_rate not in ('0', '0.0', '0.00'))
+            if m_name or has_usage or has_rate or m_rem:
                 machinery_rows.append({
-                    'machine_name': machines[i],
+                    'machine_name': m_name if m_name else "Site Machinery / Equipment",
                     'ownership': ownerships[i] if i < len(ownerships) else 'RENTAL',
-                    'quantity': quantities[i] if i < len(quantities) else '1',
-                    'billing_basis': billing_bases[i] if i < len(billing_bases) else 'DAY',
-                    'usage_value': usages[i] if i < len(usages) else '1',
-                    'rate': machinery_rates[i] if i < len(machinery_rates) else '0',
-                    'remarks': machinery_remarks[i] if i < len(machinery_remarks) else '',
+                    'quantity': quantities[i] if (i < len(quantities) and quantities[i]) else '1',
+                    'billing_basis': billing_bases[i] if i < len(billing_bases) else 'HOUR',
+                    'usage_value': m_usage if m_usage else '0',
+                    'rate': m_rate if m_rate else '0',
+                    'remarks': m_rem,
                 })
 
         # Parse Employee Visits rows

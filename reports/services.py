@@ -132,14 +132,23 @@ class ReportService:
         # 2. Process Machinery entries
         for row in machinery_rows:
             machine_name = row.get('machine_name', '').strip()
-            if not machine_name:
-                continue
-            ownership = row.get('ownership', MachineryOwnership.RENTAL)
-            billing_basis = row.get('billing_basis', MachineryBillingBasis.DAY)
             qty = Decimal(str(row.get('quantity', '1') or '1'))
-            usage = Decimal(str(row.get('usage_value', '1') or '1'))
+            usage = Decimal(str(row.get('usage_value', '0') or '0'))
             rate = Decimal(str(row.get('rate', '0') or '0'))
             remarks = row.get('remarks', '').strip()
+            ownership = row.get('ownership', MachineryOwnership.RENTAL)
+            billing_basis = row.get('billing_basis', MachineryBillingBasis.HOUR)
+
+            # Skip row only if completely untouched/blank
+            if not machine_name and usage == Decimal('0') and rate == Decimal('0') and not remarks:
+                continue
+
+            if not machine_name:
+                machine_name = "Site Machinery / Equipment"
+
+            if qty <= Decimal('0'):
+                qty = Decimal('1.00')
+
             internal_cost = Decimal(str(row.get('internal_cost', '0') or '0'))
 
             machinery = MachineryEntry(

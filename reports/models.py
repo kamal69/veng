@@ -240,14 +240,26 @@ class MachineryEntry(models.Model):
 
     def clean(self):
         super().clean()
-        if self.quantity <= Decimal('0.00'):
-            raise ValidationError({'quantity': "Quantity must be greater than zero."})
-        if self.usage_value < Decimal('0.00'):
-            raise ValidationError({'usage_value': "Usage cannot be negative."})
-        if self.rate < Decimal('0.00'):
-            raise ValidationError({'rate': "Rate cannot be negative."})
+        if not self.machine_name:
+            self.machine_name = "Site Machinery / Equipment"
+        if self.quantity is None or self.quantity <= Decimal('0.00'):
+            self.quantity = Decimal('1.00')
+        if self.usage_value is None or self.usage_value < Decimal('0.00'):
+            self.usage_value = Decimal('0.00')
+        if self.rate is None or self.rate < Decimal('0.00'):
+            self.rate = Decimal('0.00')
 
     def save(self, *args, **kwargs):
+        # Auto-fill defaults if not entered
+        if not self.machine_name:
+            self.machine_name = "Site Machinery / Equipment"
+        if self.quantity is None or self.quantity <= Decimal('0.00'):
+            self.quantity = Decimal('1.00')
+        if self.usage_value is None or self.usage_value < Decimal('0.00'):
+            self.usage_value = Decimal('0.00')
+        if self.rate is None or self.rate < Decimal('0.00'):
+            self.rate = Decimal('0.00')
+
         # Business rule: For company-owned machinery, rental cost defaults to zero.
         if self.ownership == MachineryOwnership.COMPANY_OWNED:
             self.rental_cost = Decimal('0.00')
