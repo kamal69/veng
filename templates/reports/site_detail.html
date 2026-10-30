@@ -70,7 +70,7 @@
                 <label class="form-label small fw-semibold text-muted mb-1">Search Work / Staff</label>
                 <div class="input-group input-group-sm">
                     <span class="input-group-text bg-white"><i class="bi bi-search text-muted"></i></span>
-                    <input type="text" name="q" value="{{ search_query }}" class="form-control" placeholder="Search work done, engineer...">
+                    <input type="text" name="q" value="{{ search_query }}" class="form-control" placeholder="Search today work, engineer...">
                 </div>
             </div>
 
@@ -222,7 +222,7 @@
         <!-- 1. WORK DONE TODAY (PROMINENT HIGHLIGHT) -->
         <div class="alert alert-light border border-primary border-opacity-25 rounded-3 mb-3 p-3">
             <h6 class="fw-bold text-primary mb-1">
-                <i class="bi bi-hammer me-1"></i> Work Done Today (Kya Kaam Hua):
+                <i class="bi bi-hammer me-1"></i> Today Work:
             </h6>
             <div class="text-dark fw-medium" style="white-space: pre-line;">{{ r.work_done_today }}</div>
             {% if r.remarks %}

@@ -251,7 +251,7 @@ def export_single_report_to_excel(report):
     c_wd.fill = SECTION_FILL
     row_idx += 1
 
-    ws.cell(row=row_idx, column=1, value="Work Done:").font = Font(bold=True)
+    ws.cell(row=row_idx, column=1, value="Today Work:").font = Font(bold=True)
     ws.merge_cells(start_row=row_idx, start_column=2, end_row=row_idx+1, end_column=6)
     ws.cell(row=row_idx, column=2, value=report.work_done_today).alignment = Alignment(wrap_text=True)
     row_idx += 2
