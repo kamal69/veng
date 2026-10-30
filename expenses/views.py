@@ -144,6 +144,38 @@ def employee_ledger_view(request, emp_id):
     if category_filter:
         txns_qs = txns_qs.filter(category_id=category_filter)
 
+    # Filter by Expense Head (Labour, Machinery, Other)
+    head_filter = request.GET.get('head', '').strip().upper()
+    if head_filter == 'LABOUR':
+        txns_qs = txns_qs.filter(
+            Q(category__group_type=ExpenseCategory.GroupType.LABOUR) |
+            Q(particulars__icontains='labour') |
+            Q(particulars__icontains='majdoor')
+        )
+    elif head_filter == 'MACHINERY':
+        txns_qs = txns_qs.filter(
+            Q(category__group_type__in=[ExpenseCategory.GroupType.MACHINERY, ExpenseCategory.GroupType.VEHICLE]) |
+            Q(particulars__icontains='machin') |
+            Q(particulars__icontains='diesel') |
+            Q(particulars__icontains='jcb')
+        ).exclude(
+            Q(category__group_type=ExpenseCategory.GroupType.LABOUR) |
+            Q(particulars__icontains='labour') |
+            Q(particulars__icontains='majdoor')
+        )
+    elif head_filter == 'OTHER':
+        txns_qs = txns_qs.filter(txn_type=CashTransaction.TxnType.EXPENSE).exclude(
+            Q(category__group_type__in=[ExpenseCategory.GroupType.LABOUR, ExpenseCategory.GroupType.MACHINERY, ExpenseCategory.GroupType.VEHICLE]) |
+            Q(particulars__icontains='labour') |
+            Q(particulars__icontains='majdoor') |
+            Q(particulars__icontains='machin') |
+            Q(particulars__icontains='diesel') |
+            Q(particulars__icontains='jcb')
+        )
+
+    # High-level expenditure breakdown: Labour, Machinery, Other
+    breakdown = employee.get_expense_breakdown(start_date=start_date_str, end_date=end_date_str)
+
     # Calculate summary metrics for this employee
     op = employee.opening_balances.first()
     opening_bal = op.amount if op else Decimal('0.00')
@@ -178,6 +210,8 @@ def employee_ledger_view(request, emp_id):
         'total_exp': total_exp,
         'total_out': total_out,
         'current_balance': employee.cached_balance,
+        'breakdown': breakdown,
+        'selected_head': head_filter,
         'sites': sites,
         'categories': categories,
         'other_employees': other_employees,
@@ -247,13 +281,23 @@ def add_expense_view(request, emp_id):
 
     site_obj = ExpenseSite.objects.filter(id=site_id).first() if site_id else None
     cat_obj = ExpenseCategory.objects.filter(id=category_id).first() if category_id else None
+    given_to_id = request.POST.get('given_to_employee')
+    given_to_employee = CashEmployee.objects.filter(id=given_to_id, is_active=True).first() if given_to_id else None
 
     AccountingService.create_expense(
         employee=employee, amount=amount, date=txn_date,
         site=site_obj, category=cat_obj, particulars=particulars,
-        voucher_no=voucher_no, remarks=remarks, user=request.user
+        voucher_no=voucher_no, remarks=remarks,
+        given_to_employee=given_to_employee, user=request.user
     )
-    messages.success(request, f"Successfully recorded Expense of ₹{amount:,.2f} for {employee.name}.")
+    if given_to_employee:
+        messages.success(
+            request,
+            f"Successfully recorded ₹{amount:,.2f} given to {given_to_employee.name}. "
+            f"An incoming entry has been automatically credited to {given_to_employee.name}'s ledger on {txn_date}."
+        )
+    else:
+        messages.success(request, f"Successfully recorded Expense of ₹{amount:,.2f} for {employee.name}.")
     return redirect('expenses:employee_ledger', emp_id=emp_id)
 
 
@@ -267,6 +311,7 @@ def add_cash_out_view(request, emp_id):
     amount_str = request.POST.get('amount')
     date_str = request.POST.get('transaction_date')
     recipient = request.POST.get('cash_out_recipient', '').strip()
+    recipient_emp_id = request.POST.get('recipient_employee')
     particulars = request.POST.get('particulars', '').strip()
     remarks = request.POST.get('remarks', '').strip()
 
@@ -279,11 +324,21 @@ def add_cash_out_view(request, emp_id):
         messages.error(request, f"Invalid Cash Out entry: {e}")
         return redirect('expenses:employee_ledger', emp_id=emp_id)
 
+    recipient_employee = CashEmployee.objects.filter(id=recipient_emp_id, is_active=True).first() if recipient_emp_id else None
+
     AccountingService.create_cash_out(
         employee=employee, amount=amount, date=txn_date,
-        recipient=recipient, particulars=particulars, remarks=remarks, user=request.user
+        recipient=recipient, particulars=particulars, remarks=remarks,
+        recipient_employee=recipient_employee, user=request.user
     )
-    messages.success(request, f"Successfully recorded Cash Out of ₹{amount:,.2f} to {recipient}.")
+    if recipient_employee:
+        messages.success(
+            request,
+            f"Successfully recorded ₹{amount:,.2f} given to {recipient_employee.name}. "
+            f"An incoming entry has been automatically credited to {recipient_employee.name}'s ledger on {txn_date}."
+        )
+    else:
+        messages.success(request, f"Successfully recorded Cash Out of ₹{amount:,.2f} to {recipient}.")
     return redirect('expenses:employee_ledger', emp_id=emp_id)
 
 
@@ -299,7 +354,9 @@ def add_transfer_view(request):
     date_str = request.POST.get('transfer_date')
     payment_mode = request.POST.get('payment_mode', 'Paytm').strip()
     reference_no = request.POST.get('reference_no', '').strip()
+    purpose = request.POST.get('purpose', '').strip()
     remarks = request.POST.get('remarks', '').strip()
+    full_remarks = f"[{purpose}] {remarks}".strip() if purpose else remarks
     next_url = request.POST.get('next_url')
 
     sender = get_object_or_404(CashEmployee, id=sender_id)
@@ -314,9 +371,9 @@ def add_transfer_view(request):
         AccountingService.create_employee_transfer(
             sender=sender, receiver=receiver, amount=amount,
             date=t_date, payment_mode=payment_mode,
-            reference_no=reference_no, remarks=remarks, user=request.user
+            reference_no=reference_no, remarks=full_remarks, user=request.user
         )
-        messages.success(request, f"Transferred ₹{amount:,.2f} from {sender.name} to {receiver.name} successfully.")
+        messages.success(request, f"Transferred ₹{amount:,.2f} from {sender.name} to {receiver.name} on {t_date}. Automatically synced in both ledgers.")
     except Exception as e:
         messages.error(request, f"Transfer failed: {e}")
 

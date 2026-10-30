@@ -64,6 +64,51 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Expense Utilization Breakdown by Head: Labour, Machinery, Other -->
+            <div class="mt-3 pt-3 border-top">
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                    <div>
+                        <span class="fw-bold text-dark small"><i class="bi bi-pie-chart-fill text-primary me-1"></i>Expense Breakdown (Labour, Machinery &amp; Other Charges)</span>
+                        <span class="text-muted extra-small d-block d-sm-inline ms-sm-1">&bull; Track exactly where {{ employee.name }} spent company funds</span>
+                    </div>
+                    <div class="btn-group btn-group-sm" role="group">
+                        <a href="?{% if q %}q={{ q }}&{% endif %}{% if start_date %}start_date={{ start_date }}&{% endif %}{% if end_date %}end_date={{ end_date }}&{% endif %}" class="btn {% if not selected_head %}btn-dark{% else %}btn-outline-secondary{% endif %}">
+                            All Expenses (₹{{ total_exp|floatformat:2|intcomma }})
+                        </a>
+                        <a href="?head=LABOUR{% if q %}&q={{ q }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}" class="btn {% if selected_head == 'LABOUR' %}btn-danger{% else %}btn-outline-danger{% endif %}">
+                            👷 Labour: ₹{{ breakdown.labour|floatformat:2|intcomma }}
+                        </a>
+                        <a href="?head=MACHINERY{% if q %}&q={{ q }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}" class="btn {% if selected_head == 'MACHINERY' %}btn-warning text-dark{% else %}btn-outline-warning text-dark{% endif %}">
+                            🚜 Machinery: ₹{{ breakdown.machinery|floatformat:2|intcomma }}
+                        </a>
+                        <a href="?head=OTHER{% if q %}&q={{ q }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}" class="btn {% if selected_head == 'OTHER' %}btn-primary{% else %}btn-outline-primary{% endif %}">
+                            📦 Other Charges: ₹{{ breakdown.other|floatformat:2|intcomma }}
+                        </a>
+                    </div>
+                </div>
+
+                <div class="row g-2 text-center">
+                    <div class="col-12 col-md-4">
+                        <a href="?head=LABOUR" class="text-decoration-none d-block p-2 rounded border border-danger border-opacity-25 bg-danger bg-opacity-10">
+                            <span class="extra-small text-danger fw-semibold d-block text-uppercase">👷 Labour &amp; Masonry Payments</span>
+                            <span class="fs-5 fw-bold text-danger">₹{{ breakdown.labour|floatformat:2|intcomma }}</span>
+                        </a>
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <a href="?head=MACHINERY" class="text-decoration-none d-block p-2 rounded border border-warning border-opacity-50 bg-warning bg-opacity-10">
+                            <span class="extra-small text-dark fw-semibold d-block text-uppercase">🚜 Machinery, Equipment &amp; Fuel</span>
+                            <span class="fs-5 fw-bold text-dark">₹{{ breakdown.machinery|floatformat:2|intcomma }}</span>
+                        </a>
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <a href="?head=OTHER" class="text-decoration-none d-block p-2 rounded border border-primary border-opacity-25 bg-primary bg-opacity-10">
+                            <span class="extra-small text-primary fw-semibold d-block text-uppercase">📦 Other Charges (Material, Food, Site)</span>
+                            <span class="fs-5 fw-bold text-primary">₹{{ breakdown.other|floatformat:2|intcomma }}</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -173,9 +218,15 @@
                             <td>
                                 {% if txn.txn_type == 'CASH_IN' or txn.txn_type == 'TRANSFER_IN' %}
                                     <div class="text-success fw-bold">+₹{{ txn.amount|floatformat:2|intcomma }}</div>
-                                    <div class="extra-small text-muted text-truncate" style="max-width: 150px;">
-                                        {{ txn.cash_in_source|default:"Cash In" }}
-                                    </div>
+                                    {% if txn.txn_type == 'TRANSFER_IN' %}
+                                        <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 extra-small">
+                                            <i class="bi bi-arrow-down-left me-1"></i>{{ txn.cash_in_source|default:"From Staff" }}
+                                        </span>
+                                    {% else %}
+                                        <div class="extra-small text-muted text-truncate" style="max-width: 150px;">
+                                            {{ txn.cash_in_source|default:"Cash In" }}
+                                        </div>
+                                    {% endif %}
                                 {% else %}
                                     <span class="text-muted">-</span>
                                 {% endif %}
@@ -192,7 +243,7 @@
                                 {% endif %}
                             </td>
 
-                            <!-- Category -->
+                            <!-- Category & Expense Head -->
                             <td>
                                 {% if txn.category %}
                                     <span class="badge bg-info bg-opacity-10 text-dark border border-info border-opacity-25 text-wrap text-start">
@@ -200,6 +251,15 @@
                                     </span>
                                 {% else %}
                                     <span class="text-muted extra-small">-</span>
+                                {% endif %}
+                                {% if txn.txn_type == 'EXPENSE' %}
+                                    {% if txn.expense_head == 'LABOUR' %}
+                                        <span class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25 extra-small d-block mt-1">👷 Labour</span>
+                                    {% elif txn.expense_head == 'MACHINERY' %}
+                                        <span class="badge bg-warning bg-opacity-10 text-dark border border-warning border-opacity-50 extra-small d-block mt-1">🚜 Machinery</span>
+                                    {% else %}
+                                        <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 extra-small d-block mt-1">📦 Other</span>
+                                    {% endif %}
                                 {% endif %}
                             </td>
 
@@ -232,9 +292,15 @@
                             <td>
                                 {% if txn.txn_type == 'CASH_OUT' or txn.txn_type == 'TRANSFER_OUT' %}
                                     <div class="text-warning text-dark fw-bold">-₹{{ txn.amount|floatformat:2|intcomma }}</div>
-                                    <div class="extra-small text-muted text-truncate" style="max-width: 150px;">
-                                        {{ txn.cash_out_recipient|default:"Cash Out" }}
-                                    </div>
+                                    {% if txn.txn_type == 'TRANSFER_OUT' %}
+                                        <span class="badge bg-info bg-opacity-10 text-dark border border-info border-opacity-25 extra-small">
+                                            <i class="bi bi-arrow-right me-1"></i>{{ txn.cash_out_recipient|default:"Given to Staff" }}
+                                        </span>
+                                    {% else %}
+                                        <div class="extra-small text-muted text-truncate" style="max-width: 150px;">
+                                            {{ txn.cash_out_recipient|default:"Cash Out" }}
+                                        </div>
+                                    {% endif %}
                                 {% else %}
                                     <span class="text-muted">-</span>
                                 {% endif %}
@@ -379,6 +445,22 @@
                             <label class="form-label small fw-semibold">Remarks</label>
                             <input type="text" name="remarks" class="form-control" placeholder="Additional notes...">
                         </div>
+                        <div class="col-md-12">
+                            <div class="p-3 rounded bg-light border border-info border-opacity-50">
+                                <label class="form-label small fw-bold text-primary mb-1">
+                                    <i class="bi bi-arrow-left-right me-1"></i>Give this Expense / Cash to Another Staff? (Optional)
+                                </label>
+                                <select name="given_to_employee" class="form-select form-select-sm border-primary">
+                                    <option value="">-- None (Direct Site Expense) --</option>
+                                    {% for other in other_employees %}
+                                        <option value="{{ other.id }}">Transfer &amp; Automatically Credit to {{ other.name }}</option>
+                                    {% endfor %}
+                                </select>
+                                <small class="text-muted extra-small d-block mt-1">
+                                    <i class="bi bi-info-circle me-1"></i>If selected, this amount will automatically appear as an incoming entry in the 2nd employee's ledger on this date!
+                                </small>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer bg-light">
@@ -410,8 +492,19 @@
                         <input type="number" step="0.01" name="amount" class="form-control fw-bold text-warning text-dark" placeholder="0.00" required>
                     </div>
                     <div class="mb-3">
+                        <label class="form-label small fw-semibold text-primary">
+                            <i class="bi bi-person-fill-up me-1"></i>Paid to Staff Member? (Auto-credit to their ledger)
+                        </label>
+                        <select name="recipient_employee" class="form-select form-select-sm border-primary mb-2" onchange="if(this.value){ document.getElementById('cashOutRecipientText').value = this.options[this.selectedIndex].text; }">
+                            <option value="">-- External Person / Vendor (Type below) --</option>
+                            {% for other in other_employees %}
+                                <option value="{{ other.id }}">{{ other.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
                         <label class="form-label small fw-semibold">Paid To / Recipient Name <span class="text-danger">*</span></label>
-                        <input type="text" name="cash_out_recipient" class="form-control" placeholder="Vendor, sub-contractor, or person..." required>
+                        <input type="text" name="cash_out_recipient" id="cashOutRecipientText" class="form-control" placeholder="Vendor, sub-contractor, or person..." required>
                     </div>
                     <div class="mb-3">
                         <label class="form-label small fw-semibold">Purpose / Particulars</label>
@@ -480,6 +573,15 @@
                                 <option value="UPI">UPI</option>
                             </select>
                         </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Intended Purpose (Optional)</label>
+                        <select name="purpose" class="form-select form-select-sm">
+                            <option value="General Expenses">General / Flexible Expenses</option>
+                            <option value="Labour Payments">Labour Payments</option>
+                            <option value="Machinery & Fuel">Machinery &amp; Fuel Expenses</option>
+                            <option value="Material & Site Expenses">Material &amp; Other Site Expenses</option>
+                        </select>
                     </div>
                     <div class="mb-3">
                         <label class="form-label small fw-semibold">Reference / UTR / Remarks</label>

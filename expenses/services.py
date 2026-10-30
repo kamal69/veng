@@ -125,33 +125,91 @@ class AccountingService:
 
     @classmethod
     @transaction.atomic
-    def create_expense(cls, employee, amount, date, site=None, category=None, particulars="", voucher_no="", remarks="", user=None):
-        """Records an actual site or office expense."""
+    def create_expense(cls, employee, amount, date, site=None, category=None, particulars="", voucher_no="", remarks="", given_to_employee=None, user=None):
+        """
+        Records an actual site or office expense.
+        If given_to_employee is provided, this automatically records a corresponding
+        incoming entry in the 2nd employee's ledger on that exact date.
+        """
         amount = Decimal(str(amount))
+        
+        # If given to another staff member, record as TRANSFER_OUT / expense delegation
+        recipient_name = given_to_employee.name if given_to_employee else ""
+        txn_type = CashTransaction.TxnType.TRANSFER_OUT if given_to_employee else CashTransaction.TxnType.EXPENSE
+
         txn = CashTransaction.objects.create(
             employee=employee,
             transaction_date=date,
-            txn_type=CashTransaction.TxnType.EXPENSE,
+            txn_type=txn_type,
             amount=amount,
             site=site,
             category=category,
             particulars=particulars,
             voucher_no=voucher_no,
+            cash_out_recipient=recipient_name,
+            linked_employee=given_to_employee,
             remarks=remarks,
             created_by=user
         )
         cls.recalculate_employee_ledger(employee)
+
+        # Automatically credit the 2nd employee's account on the exact same date!
+        if given_to_employee and given_to_employee != employee:
+            receiver_desc = f"Received from {employee.name}" + (f": {particulars}" if particulars else "")
+            incoming_txn = CashTransaction.objects.create(
+                employee=given_to_employee,
+                transaction_date=date,
+                txn_type=CashTransaction.TxnType.TRANSFER_IN,
+                amount=amount,
+                site=site,
+                category=category,
+                cash_in_source=f"From {employee.name}",
+                particulars=receiver_desc,
+                linked_employee=employee,
+                remarks=f"Auto-credited from {employee.name}'s entry. " + (remarks or ""),
+                created_by=user
+            )
+            cls.recalculate_employee_ledger(given_to_employee)
+
+            EmployeeTransfer.objects.create(
+                sender=employee,
+                receiver=given_to_employee,
+                amount=amount,
+                transfer_date=date,
+                payment_mode='Cash / Site Advance',
+                remarks=particulars or remarks,
+                debit_transaction=txn,
+                credit_transaction=incoming_txn,
+                created_by=user
+            )
+
         ExpenseAuditLog.objects.create(
             employee=employee, transaction=txn, action='EXPENSE_CREATED',
-            user=user, notes=f"Recorded Expense ₹{amount:,.2f} at {site} ({category})"
+            user=user, notes=f"Recorded Expense/Transfer ₹{amount:,.2f}" + (f" given to {given_to_employee.name}" if given_to_employee else f" at {site} ({category})")
         )
         return txn
 
     @classmethod
     @transaction.atomic
-    def create_cash_out(cls, employee, amount, date, recipient="", remarks="", particulars="", user=None):
-        """Records payment made to external person/vendor."""
+    def create_cash_out(cls, employee, amount, date, recipient="", remarks="", particulars="", recipient_employee=None, user=None):
+        """
+        Records payment made to external person/vendor.
+        If recipient_employee is provided or matches an active staff member,
+        it automatically records the transfer in the receiver's ledger on that date.
+        """
         amount = Decimal(str(amount))
+        
+        if not recipient_employee and recipient:
+            # Check if name exactly matches a staff member
+            recipient_employee = CashEmployee.objects.filter(name__iexact=recipient.strip(), is_active=True).first()
+
+        if recipient_employee and recipient_employee != employee:
+            return cls.create_employee_transfer(
+                sender=employee, receiver=recipient_employee, amount=amount,
+                date=date, payment_mode="Cash", reference_no="",
+                remarks=particulars or remarks, user=user
+            ).debit_transaction
+
         txn = CashTransaction.objects.create(
             employee=employee,
             transaction_date=date,
@@ -250,6 +308,31 @@ class AccountingService:
             q_filter, txn_type=CashTransaction.TxnType.EXPENSE
         ).aggregate(tot=Sum('amount'))['tot'] or Decimal('0.00')
 
+        # Company-wide Breakdown by Expense Head
+        all_exp_qs = CashTransaction.objects.filter(q_filter, txn_type=CashTransaction.TxnType.EXPENSE)
+        total_labour_expenses = all_exp_qs.filter(
+            Q(category__group_type=ExpenseCategory.GroupType.LABOUR) |
+            Q(particulars__icontains='labour') |
+            Q(particulars__icontains='majdoor')
+        ).aggregate(tot=Sum('amount'))['tot'] or Decimal('0.00')
+
+        machinery_qs = all_exp_qs.filter(
+            Q(category__group_type__in=[ExpenseCategory.GroupType.MACHINERY, ExpenseCategory.GroupType.VEHICLE]) |
+            Q(particulars__icontains='machin') |
+            Q(particulars__icontains='diesel') |
+            Q(particulars__icontains='jcb')
+        ).exclude(
+            id__in=all_exp_qs.filter(
+                Q(category__group_type=ExpenseCategory.GroupType.LABOUR) |
+                Q(particulars__icontains='labour') |
+                Q(particulars__icontains='majdoor')
+            ).values_list('id', flat=True)
+        )
+        total_machinery_expenses = machinery_qs.aggregate(tot=Sum('amount'))['tot'] or Decimal('0.00')
+        total_other_expenses = total_expenses - total_labour_expenses - total_machinery_expenses
+        if total_other_expenses < Decimal('0.00'):
+            total_other_expenses = Decimal('0.00')
+
         # Total Cash Out to external parties
         total_cash_out = CashTransaction.objects.filter(
             q_filter, txn_type=CashTransaction.TxnType.CASH_OUT
@@ -288,6 +371,9 @@ class AccountingService:
             if cur_bal < 0:
                 negative_balance_count += 1
 
+            # Head breakdown for this employee
+            breakdown = emp.get_expense_breakdown(start_date=start_date, end_date=end_date)
+
             emp_summary.append({
                 'employee': emp,
                 'opening_balance': op_amount,
@@ -296,6 +382,9 @@ class AccountingService:
                 'cash_out': c_out,
                 'current_balance': cur_bal,
                 'is_negative': cur_bal < 0,
+                'labour_expense': breakdown['labour'],
+                'machinery_expense': breakdown['machinery'],
+                'other_expense': breakdown['other'],
             })
 
         # Site-wise spending ranking
@@ -317,6 +406,9 @@ class AccountingService:
         return {
             'total_cash_in': total_cash_in,
             'total_expenses': total_expenses,
+            'total_labour_expenses': total_labour_expenses,
+            'total_machinery_expenses': total_machinery_expenses,
+            'total_other_expenses': total_other_expenses,
             'total_cash_out': total_cash_out,
             'total_transfers': total_transfers,
             'total_emp_balance': total_emp_balance,

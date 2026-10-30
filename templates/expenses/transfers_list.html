@@ -36,19 +36,22 @@
                             <th class="text-end">Amount (₹)</th>
                             <th>Payment Mode</th>
                             <th>Reference / Remarks</th>
+                            <th class="text-center">Receiver Spending</th>
                             <th class="text-center pe-4">Status</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for tr in page_obj %}
                         <tr>
-                            <td class="ps-4 text-muted small">{{ tr.transfer_date|date:"d M Y" }}</td>
+                            <td class="ps-4 text-muted small text-nowrap">{{ tr.transfer_date|date:"d M Y" }}</td>
                             <td>
                                 <div class="d-flex align-items-center gap-2">
                                     <div class="avatar-circle bg-danger bg-opacity-10 text-danger fw-bold" style="width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.75rem;">
                                         {{ tr.sender.name|slice:":1" }}
                                     </div>
-                                    <span class="fw-semibold text-dark">{{ tr.sender.name }}</span>
+                                    <a href="{% url 'expenses:employee_ledger' tr.sender.id %}" class="fw-semibold text-dark text-decoration-none">
+                                        {{ tr.sender.name }}
+                                    </a>
                                 </div>
                             </td>
                             <td class="text-center">
@@ -59,7 +62,9 @@
                                     <div class="avatar-circle bg-success bg-opacity-10 text-success fw-bold" style="width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.75rem;">
                                         {{ tr.receiver.name|slice:":1" }}
                                     </div>
-                                    <span class="fw-semibold text-dark">{{ tr.receiver.name }}</span>
+                                    <a href="{% url 'expenses:employee_ledger' tr.receiver.id %}" class="fw-semibold text-dark text-decoration-none">
+                                        {{ tr.receiver.name }}
+                                    </a>
                                 </div>
                             </td>
                             <td class="text-end fw-bold text-primary">₹{{ tr.amount|floatformat:2|intcomma }}</td>
@@ -69,15 +74,20 @@
                                 </span>
                             </td>
                             <td class="small text-muted">{{ tr.reference_no|default:tr.remarks|default:"-" }}</td>
+                            <td class="text-center">
+                                <a href="{% url 'expenses:employee_ledger' tr.receiver.id %}" class="btn btn-outline-primary btn-sm py-0 px-2" style="font-size: 0.75rem;" title="View receiver expenses">
+                                    <i class="bi bi-journal-text me-1"></i>{{ tr.receiver.name }}'s Expenses &rarr;
+                                </a>
+                            </td>
                             <td class="text-center pe-4">
                                 <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 px-2 py-1">
-                                    <i class="bi bi-check-all me-1"></i>Synced & Balanced
+                                    <i class="bi bi-check-all me-1"></i>Synced in Ledger
                                 </span>
                             </td>
                         </tr>
                         {% empty %}
                         <tr>
-                            <td colspan="8" class="text-center py-5 text-muted">
+                            <td colspan="9" class="text-center py-5 text-muted">
                                 <i class="bi bi-inbox fs-2 d-block mb-2"></i>
                                 No internal transfers recorded yet. Click <strong>+ Record Transfer</strong> to transfer cash between staff.
                             </td>
@@ -157,6 +167,15 @@
                                 <option value="UPI">UPI</option>
                             </select>
                         </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Intended Purpose (Optional)</label>
+                        <select name="purpose" class="form-select form-select-sm">
+                            <option value="General Expenses">General / Flexible Expenses</option>
+                            <option value="Labour Payments">Labour Payments</option>
+                            <option value="Machinery & Fuel">Machinery &amp; Fuel Expenses</option>
+                            <option value="Material & Site Expenses">Material &amp; Other Site Expenses</option>
+                        </select>
                     </div>
                     <div class="mb-3">
                         <label class="form-label small fw-semibold">Reference / UTR / Remarks</label>

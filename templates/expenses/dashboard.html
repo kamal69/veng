@@ -80,7 +80,11 @@
                         </span>
                     </div>
                     <h4 class="fw-bold mb-0 text-danger">₹{{ summary.total_expenses|floatformat:2|intcomma }}</h4>
-                    <span class="text-muted extra-small">Material, Labour, Fuel, Sites</span>
+                    <div class="extra-small text-muted mt-1">
+                        <span class="text-danger fw-semibold">👷 Labour: ₹{{ summary.total_labour_expenses|floatformat:0|intcomma }}</span> &bull; 
+                        <span class="text-warning text-dark fw-semibold">🚜 Mach: ₹{{ summary.total_machinery_expenses|floatformat:0|intcomma }}</span> &bull; 
+                        <span class="text-primary fw-semibold">📦 Other: ₹{{ summary.total_other_expenses|floatformat:0|intcomma }}</span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -150,10 +154,12 @@
                     <thead class="table-light text-uppercase extra-small text-muted">
                         <tr>
                             <th class="ps-4">Employee</th>
-                            <th class="text-end">Opening Balance</th>
+                            <th class="text-end">Opening Bal</th>
                             <th class="text-end">Total Cash In</th>
-                            <th class="text-end">Total Expenses</th>
-                            <th class="text-end">Total Cash Out</th>
+                            <th class="text-end text-danger">👷 Labour</th>
+                            <th class="text-end text-dark">🚜 Machinery</th>
+                            <th class="text-end text-primary">📦 Other</th>
+                            <th class="text-end fw-bold">Total Expenses</th>
                             <th class="text-end pe-4">Available Balance</th>
                             <th class="text-center">Status</th>
                             <th class="text-center pe-3">Action</th>
@@ -177,8 +183,22 @@
                             </td>
                             <td class="text-end text-muted">₹{{ item.opening_balance|floatformat:2|intcomma }}</td>
                             <td class="text-end text-success fw-semibold">₹{{ item.cash_in|floatformat:2|intcomma }}</td>
-                            <td class="text-end text-danger fw-semibold">₹{{ item.expenses|floatformat:2|intcomma }}</td>
-                            <td class="text-end text-warning fw-semibold">₹{{ item.cash_out|floatformat:2|intcomma }}</td>
+                            <td class="text-end text-danger fw-semibold">
+                                <a href="{% url 'expenses:employee_ledger' item.employee.id %}?head=LABOUR" class="text-danger text-decoration-none" title="Filter by Labour">
+                                    ₹{{ item.labour_expense|floatformat:2|intcomma }}
+                                </a>
+                            </td>
+                            <td class="text-end text-dark fw-semibold">
+                                <a href="{% url 'expenses:employee_ledger' item.employee.id %}?head=MACHINERY" class="text-dark text-decoration-none" title="Filter by Machinery">
+                                    ₹{{ item.machinery_expense|floatformat:2|intcomma }}
+                                </a>
+                            </td>
+                            <td class="text-end text-primary fw-semibold">
+                                <a href="{% url 'expenses:employee_ledger' item.employee.id %}?head=OTHER" class="text-primary text-decoration-none" title="Filter by Other Charges">
+                                    ₹{{ item.other_expense|floatformat:2|intcomma }}
+                                </a>
+                            </td>
+                            <td class="text-end text-danger fw-bold">₹{{ item.expenses|floatformat:2|intcomma }}</td>
                             <td class="text-end pe-4">
                                 <span class="fs-6 fw-bold {% if item.current_balance < 0 %}text-danger{% else %}text-success{% endif %}">
                                     ₹{{ item.current_balance|floatformat:2|intcomma }}
