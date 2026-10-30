@@ -52,8 +52,8 @@
                 </div>
 
                 <div class="col-12 col-md-3">
-                    <label for="siteStatusSelect" class="form-label fw-semibold">Site Working Status <span class="text-danger">*</span></label>
-                    <select name="site_status" id="siteStatusSelect" class="form-select" required>
+                    <label for="siteStatusSelect" class="form-label fw-semibold">Site Working Status</label>
+                    <select name="site_status" id="siteStatusSelect" class="form-select">
                         {% for code, label in site_statuses %}
                             <option value="{{ code }}" {% if report and report.site_status == code %}selected{% endif %}>
                                 {{ label }}
@@ -63,14 +63,14 @@
                 </div>
 
                 <div class="col-12 col-md-4">
-                    <label class="form-label fw-semibold">Reported By (Engineer Name) <span class="text-danger">*</span></label>
-                    <input type="text" name="reported_by_name" class="form-control" required
+                    <label class="form-label fw-semibold">Reported By (Engineer Name)</label>
+                    <input type="text" name="reported_by_name" class="form-control"
                            value="{% if report %}{{ report.reported_by_name }}{% else %}{{ default_name }}{% endif %}">
                 </div>
 
                 <div class="col-12 col-md-4">
-                    <label class="form-label fw-semibold">Designation <span class="text-danger">*</span></label>
-                    <input type="text" name="reported_by_designation" class="form-control" required
+                    <label class="form-label fw-semibold">Designation</label>
+                    <input type="text" name="reported_by_designation" class="form-control"
                            value="{% if report %}{{ report.reported_by_designation }}{% else %}{{ default_designation }}{% endif %}">
                 </div>
 
@@ -124,24 +124,24 @@
                             {% for m in report.manpower_entries.all %}
                             <tr>
                                 <td>
-                                    <select name="manpower_category[]" class="form-select form-select-sm" required>
+                                    <select name="manpower_category[]" class="form-select form-select-sm">
                                         {% for c, c_lbl in categories %}
                                             <option value="{{ c }}" {% if m.category == c %}selected{% endif %}>{{ c_lbl }}</option>
                                         {% endfor %}
                                     </select>
                                 </td>
                                 <td>
-                                    <select name="manpower_type[]" class="form-select form-select-sm" required>
+                                    <select name="manpower_type[]" class="form-select form-select-sm">
                                         {% for t, t_lbl in types %}
                                             <option value="{{ t }}" {% if m.type == t %}selected{% endif %}>{{ t_lbl }}</option>
                                         {% endfor %}
                                     </select>
                                 </td>
                                 <td>
-                                    <input type="number" name="manpower_count[]" class="form-control form-control-sm text-end mp-count" min="1" step="1" required value="{{ m.worker_count }}" oninput="recalcManpowerRow(this)">
+                                    <input type="number" name="manpower_count[]" class="form-control form-control-sm text-end mp-count" min="0" step="1" value="{{ m.worker_count }}" oninput="recalcManpowerRow(this)">
                                 </td>
                                 <td>
-                                    <input type="number" name="manpower_rate[]" class="form-control form-control-sm text-end mp-rate" min="0" step="0.01" required value="{{ m.rate_per_head }}" oninput="recalcManpowerRow(this)">
+                                    <input type="number" name="manpower_rate[]" class="form-control form-control-sm text-end mp-rate" min="0" step="0.01" value="{{ m.rate_per_head }}" oninput="recalcManpowerRow(this)">
                                 </td>
                                 <td>
                                     <input type="text" class="form-control form-control-sm text-end mp-total bg-light fw-bold" readonly value="₹ {{ m.total_cost }}">
@@ -160,27 +160,27 @@
                             <!-- Default 1 empty row -->
                             <tr>
                                 <td>
-                                    <select name="manpower_category[]" class="form-select form-select-sm" required>
+                                    <select name="manpower_category[]" class="form-select form-select-sm">
                                         {% for c, c_lbl in categories %}
                                             <option value="{{ c }}">{{ c_lbl }}</option>
                                         {% endfor %}
                                     </select>
                                 </td>
                                 <td>
-                                    <select name="manpower_type[]" class="form-select form-select-sm" required>
+                                    <select name="manpower_type[]" class="form-select form-select-sm">
                                         {% for t, t_lbl in types %}
                                             <option value="{{ t }}">{{ t_lbl }}</option>
                                         {% endfor %}
                                     </select>
                                 </td>
                                 <td>
-                                    <input type="number" name="manpower_count[]" class="form-control form-control-sm text-end mp-count" min="1" step="1" required value="10" oninput="recalcManpowerRow(this)">
+                                    <input type="number" name="manpower_count[]" class="form-control form-control-sm text-end mp-count" min="0" step="1" value="0" oninput="recalcManpowerRow(this)">
                                 </td>
                                 <td>
-                                    <input type="number" name="manpower_rate[]" class="form-control form-control-sm text-end mp-rate" min="0" step="0.01" required value="650.00" oninput="recalcManpowerRow(this)">
+                                    <input type="number" name="manpower_rate[]" class="form-control form-control-sm text-end mp-rate" min="0" step="0.01" value="0.00" oninput="recalcManpowerRow(this)">
                                 </td>
                                 <td>
-                                    <input type="text" class="form-control form-control-sm text-end mp-total bg-light fw-bold" readonly value="₹ 6,500.00">
+                                    <input type="text" class="form-control form-control-sm text-end mp-total bg-light fw-bold" readonly value="₹ 0.00">
                                 </td>
                                 <td>
                                     <input type="text" name="manpower_remarks[]" class="form-control form-control-sm" placeholder="General civil work">
@@ -238,7 +238,7 @@
                             {% for mac in report.machinery_entries.all %}
                             <tr>
                                 <td>
-                                    <input type="text" name="machine_name[]" class="form-control form-control-sm" required placeholder="e.g. JCB Excavator" value="{{ mac.machine_name }}">
+                                    <input type="text" name="machine_name[]" class="form-control form-control-sm" placeholder="e.g. JCB Excavator (optional)" value="{{ mac.machine_name }}">
                                     <input type="text" name="machine_remarks[]" class="form-control form-control-sm mt-1 text-muted small" placeholder="Remarks (optional)" value="{{ mac.remarks }}">
                                 </td>
                                 <td>
@@ -472,7 +472,7 @@
                             {% for t in report.tool_entries.all %}
                             <tr>
                                 <td>
-                                    <input type="text" name="tool_name[]" class="form-control form-control-sm" required value="{{ t.tool_name }}" placeholder="e.g. Cut-off Saw, Hammer Drill, Needle Vibrator">
+                                    <input type="text" name="tool_name[]" class="form-control form-control-sm" value="{{ t.tool_name }}" placeholder="e.g. Cut-off Saw, Hammer Drill, Needle Vibrator (optional)">
                                 </td>
                                 <td>
                                     <input type="number" name="tool_quantity[]" class="form-control form-control-sm text-end" min="1" step="1" value="{{ t.quantity }}">
@@ -558,8 +558,8 @@
         </div>
         <div class="card-body p-4">
             <div class="mb-3">
-                <label for="workDoneTextarea" class="form-label fw-semibold">Work Done Today <span class="text-danger">*</span></label>
-                <textarea name="work_done_today" id="workDoneTextarea" rows="4" class="form-control" required placeholder="Describe detailed engineering work performed today (e.g. Concrete poured, steel reinforcement tied, formwork erected, levels checked...)">{% if report %}{{ report.work_done_today }}{% endif %}</textarea>
+                <label for="workDoneTextarea" class="form-label fw-semibold">Work Done Today</label>
+                <textarea name="work_done_today" id="workDoneTextarea" rows="4" class="form-control" placeholder="Describe detailed engineering work performed today (e.g. Concrete poured, steel reinforcement tied, formwork erected, levels checked...)">{% if report %}{{ report.work_done_today }}{% endif %}</textarea>
             </div>
 
             <div class="mb-0">
@@ -654,27 +654,27 @@ function addManpowerRow() {
     const tr = document.createElement('tr');
     tr.innerHTML = `
         <td>
-            <select name="manpower_category[]" class="form-select form-select-sm" required>
+            <select name="manpower_category[]" class="form-select form-select-sm">
                 {% for c, c_lbl in categories %}
                     <option value="{{ c }}">{{ c_lbl }}</option>
                 {% endfor %}
             </select>
         </td>
         <td>
-            <select name="manpower_type[]" class="form-select form-select-sm" required>
+            <select name="manpower_type[]" class="form-select form-select-sm">
                 {% for t, t_lbl in types %}
                     <option value="{{ t }}">{{ t_lbl }}</option>
                 {% endfor %}
             </select>
         </td>
         <td>
-            <input type="number" name="manpower_count[]" class="form-control form-control-sm text-end mp-count" min="1" step="1" required value="1" oninput="recalcManpowerRow(this)">
+            <input type="number" name="manpower_count[]" class="form-control form-control-sm text-end mp-count" min="0" step="1" value="0" oninput="recalcManpowerRow(this)">
         </td>
         <td>
-            <input type="number" name="manpower_rate[]" class="form-control form-control-sm text-end mp-rate" min="0" step="0.01" required value="650.00" oninput="recalcManpowerRow(this)">
+            <input type="number" name="manpower_rate[]" class="form-control form-control-sm text-end mp-rate" min="0" step="0.01" value="0.00" oninput="recalcManpowerRow(this)">
         </td>
         <td>
-            <input type="text" class="form-control form-control-sm text-end mp-total bg-light fw-bold" readonly value="₹ 650.00">
+            <input type="text" class="form-control form-control-sm text-end mp-total bg-light fw-bold" readonly value="₹ 0.00">
         </td>
         <td>
             <input type="text" name="manpower_remarks[]" class="form-control form-control-sm" placeholder="Optional notes">
@@ -717,7 +717,7 @@ function addMachineryRow() {
     const tr = document.createElement('tr');
     tr.innerHTML = `
         <td>
-            <input type="text" name="machine_name[]" class="form-control form-control-sm" required placeholder="Machine Name">
+            <input type="text" name="machine_name[]" class="form-control form-control-sm" placeholder="Machine Name (optional)">
             <input type="text" name="machine_remarks[]" class="form-control form-control-sm mt-1 text-muted small" placeholder="Remarks (optional)">
         </td>
         <td>
@@ -869,7 +869,7 @@ function addToolRow() {
     const tr = document.createElement('tr');
     tr.innerHTML = `
         <td>
-            <input type="text" name="tool_name[]" class="form-control form-control-sm" required placeholder="e.g. Cut-off Saw, Concrete Vibrator, Grinder">
+            <input type="text" name="tool_name[]" class="form-control form-control-sm" placeholder="e.g. Cut-off Saw, Concrete Vibrator, Grinder (optional)">
         </td>
         <td>
             <input type="number" name="tool_quantity[]" class="form-control form-control-sm text-end" min="1" step="1" value="1">

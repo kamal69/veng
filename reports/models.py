@@ -95,13 +95,13 @@ class SiteReport(models.Model):
     status = models.CharField(max_length=20, choices=ReportStatus.choices, default=ReportStatus.DRAFT)
     site_status = models.CharField(max_length=30, choices=SiteStatus.choices, default=SiteStatus.IN_PROGRESS)
 
-    reported_by_name = models.CharField(max_length=150)
-    reported_by_designation = models.CharField(max_length=100)
+    reported_by_name = models.CharField(max_length=150, blank=True, default='')
+    reported_by_designation = models.CharField(max_length=100, blank=True, default='')
     reported_by_user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='filed_reports')
 
-    company_employees_on_site = models.TextField(blank=True, help_text="Summary of company staff & supervisors present on site")
-    work_done_today = models.TextField(help_text="Detailed description of work accomplished today")
-    remarks = models.TextField(blank=True, help_text="Observations, site challenges, safety or material notes")
+    company_employees_on_site = models.TextField(blank=True, default='', help_text="Summary of company staff & supervisors present on site")
+    work_done_today = models.TextField(blank=True, default='', help_text="Detailed description of work accomplished today")
+    remarks = models.TextField(blank=True, default='', help_text="Observations, site challenges, safety or material notes")
 
     # Calculated financial totals (persisted for reporting, derived from child entries)
     total_manpower_cost = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
