@@ -18,7 +18,7 @@ class Command(BaseCommand):
 
         # 1. Create Users & Profiles
         users_data = [
-            ('admin', 'admin@vikaseng.com', 'admin123', 'Rajesh', 'Sharma', UserRole.ADMIN, 'Chief Operations Officer', '+91 98200 11223', True),
+            ('admin', 'kamal@vikaseng.com', 'admin123', 'Kamal', 'Jeet', UserRole.ADMIN, 'Developer / System Administrator', '7018170921', True),
             ('engineer', 'engineer@vikaseng.com', 'engineer123', 'Amit', 'Verma', UserRole.SITE_ENGINEER, 'Senior Site Engineer', '+91 98200 44556', False),
             ('manager', 'manager@vikaseng.com', 'manager123', 'Pooja', 'Mehta', UserRole.MANAGEMENT, 'General Manager - Projects', '+91 98200 77889', False),
         ]
@@ -26,6 +26,9 @@ class Command(BaseCommand):
         created_users = {}
         for username, email, pwd, first, last, role, desig, phone, is_staff in users_data:
             user, created = User.objects.get_or_create(username=username, defaults={'email': email, 'first_name': first, 'last_name': last})
+            user.first_name = first
+            user.last_name = last
+            user.email = email
             user.set_password(pwd)
             user.is_staff = is_staff
             user.is_superuser = (role == UserRole.ADMIN)
