@@ -1,0 +1,1086 @@
+import json
+from decimal import Decimal
+from datetime import timedelta
+from django.shortcuts import render, get_object_or_404, redirect
+from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth.models import User
+from django.contrib.auth.forms import AuthenticationForm
+from django.contrib.auth.decorators import login_required
+from django.contrib import messages
+from django.http import HttpResponse, JsonResponse
+from django.db.models import Sum, Count, Q
+from django.utils import timezone
+from django.core.paginator import Paginator
+from django.core.exceptions import ValidationError
+
+from .models import (
+    Site, Employee, SiteReport, ManpowerEntry, MachineryEntry,
+    EmployeeSiteVisit, ReportAuditLog, UserProfile, UserRole,
+    ManpowerCategory, ManpowerType, MachineryOwnership, MachineryBillingBasis, VisitType
+)
+from .services import ReportService
+from .excel_export import export_single_report_to_excel, export_bulk_reports_to_excel
+from .permissions import admin_required, management_required, site_engineer_or_admin_required
+from .forms import SiteForm, EmployeeForm, UserProfileForm, ReturnReportForm
+
+
+# -------------------------------------------------------------
+# AUTHENTICATION VIEWS
+# -------------------------------------------------------------
+
+def login_view(request):
+    if request.user.is_authenticated:
+        return redirect('dashboard')
+
+    if request.method == 'POST':
+        form = AuthenticationForm(request, data=request.POST)
+        if form.is_valid():
+            user = form.get_user()
+            login(request, user)
+            messages.success(request, f"Welcome back, {user.get_full_name() or user.username}!")
+            next_url = request.GET.get('next', 'dashboard')
+            return redirect(next_url)
+        else:
+            messages.error(request, "Invalid username or password. Please try again.")
+    else:
+        form = AuthenticationForm()
+
+    return render(request, 'auth/login.html', {'form': form})
+
+
+@login_required
+def logout_view(request):
+    logout(request)
+    messages.info(request, "You have been logged out successfully.")
+    return redirect('login')
+
+
+@login_required
+def profile_view(request):
+    profile = getattr(request.user, 'profile', None)
+    return render(request, 'auth/profile.html', {
+        'profile': profile,
+        'user': request.user,
+    })
+
+
+# -------------------------------------------------------------
+# DASHBOARD VIEW
+# -------------------------------------------------------------
+
+@login_required
+def dashboard_view(request):
+    today = timezone.localdate()
+
+    # Filter parameters
+    site_id = request.GET.get('site_id', '')
+    date_filter = request.GET.get('date_filter', 'today')  # today, week, month, custom
+    start_date_str = request.GET.get('start_date', '')
+    end_date_str = request.GET.get('end_date', '')
+
+    base_reports = SiteReport.objects.all()
+
+    # Role filter: if Site Engineer, show their assigned sites or authored reports by default
+    user_profile = getattr(request.user, 'profile', None)
+    if user_profile and user_profile.is_site_engineer:
+        assigned = user_profile.assigned_sites.all()
+        if assigned.exists():
+            base_reports = base_reports.filter(Q(site__in=assigned) | Q(reported_by_user=request.user))
+
+    # Apply Site filter
+    if site_id:
+        base_reports = base_reports.filter(site_id=site_id)
+
+    # Date range calculation
+    if date_filter == 'today':
+        range_start = today
+        range_end = today
+    elif date_filter == 'week':
+        range_start = today - timedelta(days=7)
+        range_end = today
+    elif date_filter == 'month':
+        range_start = today - timedelta(days=30)
+        range_end = today
+    elif date_filter == 'custom' and start_date_str and end_date_str:
+        try:
+            range_start = timezone.datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            range_end = timezone.datetime.strptime(end_date_str, '%Y-%m-%d').date()
+        except ValueError:
+            range_start = today - timedelta(days=7)
+            range_end = today
+    else:
+        range_start = today - timedelta(days=7)
+        range_end = today
+
+    # KPI 1: Active Sites
+    active_sites_count = Site.objects.filter(status='ACTIVE').count()
+
+    # KPI 2 & 3: Today's Total Manpower & Cost
+    today_reports = base_reports.filter(report_date=today)
+    today_stats = today_reports.aggregate(
+        total_cost=Sum('total_site_cost'),
+        total_workers=Sum('total_manpower_count'),
+        manpower_cost=Sum('total_manpower_cost'),
+        machinery_cost=Sum('total_machinery_cost'),
+        employee_cost=Sum('total_employee_cost'),
+    )
+    today_total_cost = today_stats['total_cost'] or Decimal('0.00')
+    today_total_manpower = today_stats['total_workers'] or 0
+
+    # KPI 4: Pending Reports
+    pending_reports_count = base_reports.filter(status=SiteReport.ReportStatus.SUBMITTED).count()
+
+    # Pending review list (for Admin / Management)
+    pending_reports = base_reports.filter(status=SiteReport.ReportStatus.SUBMITTED).order_by('-submitted_at')[:6]
+
+    # Site-wise Cost Comparison (for filtered date range)
+    range_reports = base_reports.filter(report_date__gte=range_start, report_date__lte=range_end)
+    site_costs = range_reports.values('site__name').annotate(
+        site_total=Sum('total_site_cost'),
+        mp_total=Sum('total_manpower_cost'),
+        mac_total=Sum('total_machinery_cost'),
+        emp_total=Sum('total_employee_cost'),
+        reports_count=Count('id')
+    ).order_by('-site_total')
+
+    site_chart_labels = [sc['site__name'] for sc in site_costs]
+    site_chart_values = [float(sc['site_total'] or 0) for sc in site_costs]
+
+    # Trend: daily costs over the last 7 days
+    trend_labels = []
+    trend_values = []
+    for i in range(6, -1, -1):
+        day = today - timedelta(days=i)
+        day_cost = base_reports.filter(report_date=day).aggregate(s=Sum('total_site_cost'))['s'] or 0
+        trend_labels.append(day.strftime("%d %b"))
+        trend_values.append(float(day_cost))
+
+    # Cost breakdown for filtered range
+    range_totals = range_reports.aggregate(
+        mp=Sum('total_manpower_cost'),
+        mac=Sum('total_machinery_cost'),
+        emp=Sum('total_employee_cost'),
+        tot=Sum('total_site_cost')
+    )
+    manpower_share = float(range_totals['mp'] or 0)
+    machinery_share = float(range_totals['mac'] or 0)
+    employee_share = float(range_totals['emp'] or 0)
+
+    # Recent reports
+    recent_reports = base_reports.order_by('-report_date', '-created_at')[:8]
+
+    # Sites dropdown list
+    sites = Site.objects.all()
+
+    context = {
+        'active_sites_count': active_sites_count,
+        'today_total_manpower': today_total_manpower,
+        'today_total_cost': today_total_cost,
+        'pending_reports_count': pending_reports_count,
+        'pending_reports': pending_reports,
+        'recent_reports': recent_reports,
+        'sites': sites,
+        'selected_site_id': site_id,
+        'date_filter': date_filter,
+        'start_date': range_start.strftime('%Y-%m-%d'),
+        'end_date': range_end.strftime('%Y-%m-%d'),
+        'today_date': today,
+        # Chart JSON data
+        'site_chart_labels': json.dumps(site_chart_labels),
+        'site_chart_values': json.dumps(site_chart_values),
+        'trend_labels': json.dumps(trend_labels),
+        'trend_values': json.dumps(trend_values),
+        'cost_composition': json.dumps([manpower_share, machinery_share, employee_share]),
+        'site_costs': site_costs,
+    }
+    return render(request, 'reports/dashboard.html', context)
+
+
+# -------------------------------------------------------------
+# DAILY SITE REPORTS LIST & CRUD
+# -------------------------------------------------------------
+
+@login_required
+def report_list_view(request):
+    reports = SiteReport.objects.select_related('site', 'reported_by_user', 'approved_by').all()
+
+    # Filters
+    site_id = request.GET.get('site_id', '')
+    status = request.GET.get('status', '')
+    date_from = request.GET.get('date_from', '')
+    date_to = request.GET.get('date_to', '')
+    q = request.GET.get('q', '').strip()
+
+    if site_id:
+        reports = reports.filter(site_id=site_id)
+    if status:
+        reports = reports.filter(status=status)
+    if date_from:
+        reports = reports.filter(report_date__gte=date_from)
+    if date_to:
+        reports = reports.filter(report_date__lte=date_to)
+    if q:
+        reports = reports.filter(
+            Q(site__name__icontains=q) |
+            Q(reported_by_name__icontains=q) |
+            Q(work_done_today__icontains=q)
+        )
+
+    # Aggregates for filtered result
+    stats = reports.aggregate(
+        total_cost=Sum('total_site_cost'),
+        total_workers=Sum('total_manpower_count')
+    )
+
+    paginator = Paginator(reports, 15)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+
+    sites = Site.objects.all()
+
+    context = {
+        'page_obj': page_obj,
+        'sites': sites,
+        'selected_site': site_id,
+        'selected_status': status,
+        'date_from': date_from,
+        'date_to': date_to,
+        'search_query': q,
+        'filtered_total_cost': stats['total_cost'] or Decimal('0.00'),
+        'filtered_total_workers': stats['total_workers'] or 0,
+        'statuses': SiteReport.ReportStatus.choices,
+    }
+    return render(request, 'reports/report_list.html', context)
+
+
+@login_required
+def report_detail_view(request, pk):
+    report = get_object_or_404(
+        SiteReport.objects.select_related('site', 'reported_by_user', 'approved_by', 'submitted_by'),
+        pk=pk
+    )
+    manpower_entries = report.manpower_entries.all()
+    machinery_entries = report.machinery_entries.all()
+    employee_visits = report.employee_visits.select_related('employee').all()
+    tool_entries = report.tool_entries.all()
+    audit_logs = report.audit_logs.select_related('performed_by').all()
+
+    # Permission checks
+    user_profile = getattr(request.user, 'profile', None)
+    is_admin = request.user.is_superuser or (user_profile and user_profile.is_admin)
+    is_management = is_admin or (user_profile and user_profile.is_management)
+    can_edit = (report.status != SiteReport.ReportStatus.APPROVED) or is_admin
+    can_submit = (report.status in [SiteReport.ReportStatus.DRAFT, SiteReport.ReportStatus.RETURNED])
+    can_approve = is_management and report.status == SiteReport.ReportStatus.SUBMITTED
+    can_return = is_management and report.status in [SiteReport.ReportStatus.SUBMITTED, SiteReport.ReportStatus.APPROVED]
+
+    return render(request, 'reports/report_detail.html', {
+        'report': report,
+        'manpower_entries': manpower_entries,
+        'machinery_entries': machinery_entries,
+        'employee_visits': employee_visits,
+        'tool_entries': tool_entries,
+        'audit_logs': audit_logs,
+        'can_edit': can_edit,
+        'can_submit': can_submit,
+        'can_approve': can_approve,
+        'can_return': can_return,
+        'is_admin': is_admin,
+        'return_form': ReturnReportForm(),
+    })
+
+
+@login_required
+def report_create_view(request):
+    """
+    Renders dynamic daily report form and handles saving as Draft or Submit.
+    """
+    if request.method == 'POST':
+        action = request.POST.get('action', 'save_draft')  # 'save_draft' or 'submit'
+        report_data = {
+            'site': request.POST.get('site'),
+            'report_date': request.POST.get('report_date'),
+            'site_status': request.POST.get('site_status'),
+            'reported_by_name': request.POST.get('reported_by_name'),
+            'reported_by_designation': request.POST.get('reported_by_designation'),
+            'company_employees_on_site': request.POST.get('company_employees_on_site', ''),
+            'work_done_today': request.POST.get('work_done_today', ''),
+            'remarks': request.POST.get('remarks', ''),
+            'allow_duplicate': request.POST.get('allow_duplicate') == '1',
+        }
+
+        # Parse Manpower rows
+        manpower_rows = []
+        categories = request.POST.getlist('manpower_category[]')
+        types = request.POST.getlist('manpower_type[]')
+        counts = request.POST.getlist('manpower_count[]')
+        rates = request.POST.getlist('manpower_rate[]')
+        remarks_list = request.POST.getlist('manpower_remarks[]')
+
+        for i in range(len(categories)):
+            if i < len(counts) and counts[i]:
+                manpower_rows.append({
+                    'category': categories[i],
+                    'type': types[i] if i < len(types) else '',
+                    'worker_count': counts[i],
+                    'rate_per_head': rates[i] if i < len(rates) else '0',
+                    'remarks': remarks_list[i] if i < len(remarks_list) else '',
+                })
+
+        # Parse Machinery rows
+        machinery_rows = []
+        machines = request.POST.getlist('machine_name[]')
+        ownerships = request.POST.getlist('machine_ownership[]')
+        quantities = request.POST.getlist('machine_quantity[]')
+        billing_bases = request.POST.getlist('machine_billing_basis[]')
+        usages = request.POST.getlist('machine_usage[]')
+        machinery_rates = request.POST.getlist('machine_rate[]')
+        machinery_remarks = request.POST.getlist('machine_remarks[]')
+
+        for i in range(len(machines)):
+            if machines[i].strip():
+                machinery_rows.append({
+                    'machine_name': machines[i],
+                    'ownership': ownerships[i] if i < len(ownerships) else 'RENTAL',
+                    'quantity': quantities[i] if i < len(quantities) else '1',
+                    'billing_basis': billing_bases[i] if i < len(billing_bases) else 'DAY',
+                    'usage_value': usages[i] if i < len(usages) else '1',
+                    'rate': machinery_rates[i] if i < len(machinery_rates) else '0',
+                    'remarks': machinery_remarks[i] if i < len(machinery_remarks) else '',
+                })
+
+        # Parse Employee Visits rows
+        employee_rows = []
+        emp_ids = request.POST.getlist('employee_id[]')
+        visit_types = request.POST.getlist('visit_type[]')
+        hours_list = request.POST.getlist('hours_spent[]')
+        applied_rates = request.POST.getlist('applied_rate[]')
+        emp_remarks = request.POST.getlist('employee_remarks[]')
+
+        for i in range(len(emp_ids)):
+            if emp_ids[i]:
+                employee_rows.append({
+                    'employee_id': emp_ids[i],
+                    'visit_type': visit_types[i] if i < len(visit_types) else 'FULL_DAY',
+                    'hours_spent': hours_list[i] if i < len(hours_list) else '0',
+                    'applied_rate': applied_rates[i] if i < len(applied_rates) else '0',
+                    'remarks': emp_remarks[i] if i < len(emp_remarks) else '',
+                })
+
+        # Parse Tools Used rows
+        tool_rows = []
+        t_names = request.POST.getlist('tool_name[]')
+        t_qtys = request.POST.getlist('tool_quantity[]')
+        t_users = request.POST.getlist('tool_used_by[]')
+        t_remarks = request.POST.getlist('tool_remarks[]')
+
+        for i in range(len(t_names)):
+            if t_names[i].strip():
+                tool_rows.append({
+                    'tool_name': t_names[i].strip(),
+                    'quantity': t_qtys[i] if i < len(t_qtys) and t_qtys[i] else 1,
+                    'used_by': t_users[i].strip() if i < len(t_users) else '',
+                    'remarks': t_remarks[i].strip() if i < len(t_remarks) else '',
+                })
+
+        try:
+            report = ReportService.save_report(
+                user=request.user,
+                report_data=report_data,
+                manpower_rows=manpower_rows,
+                machinery_rows=machinery_rows,
+                employee_rows=employee_rows,
+                submit_action=action,
+                tool_rows=tool_rows,
+            )
+            verb = "submitted for approval" if action == 'submit' else "saved as draft"
+            messages.success(request, f"Daily Site Report successfully {verb}!")
+            return redirect('report_detail', pk=report.pk)
+        except ValidationError as e:
+            if hasattr(e, 'message_dict'):
+                err_text = "; ".join([f"{k.replace('_', ' ').title()}: {', '.join(v)}" for k, v in e.message_dict.items()])
+            elif hasattr(e, 'messages'):
+                err_text = "; ".join(e.messages)
+            else:
+                err_text = str(e)
+            messages.error(request, f"Validation Error: {err_text}")
+        except Exception as e:
+            messages.error(request, f"Error saving report: {str(e)}")
+
+    # GET request: prepare form options
+    user_profile = getattr(request.user, 'profile', None)
+    default_name = request.user.get_full_name() or request.user.username
+    default_desig = user_profile.designation if user_profile else 'Site Engineer'
+
+    sites = Site.objects.filter(status='ACTIVE')
+    employees = Employee.objects.filter(is_active=True).order_by('name')
+
+    # Employee serialized data for client-side JS auto-fill
+    employees_json = json.dumps([
+        {
+            'id': emp.id,
+            'name': emp.name,
+            'designation': emp.designation,
+            'daily_rate': float(emp.daily_rate),
+            'hourly_rate': float(emp.hourly_rate),
+        }
+        for emp in employees
+    ])
+
+    context = {
+        'sites': sites,
+        'employees': employees,
+        'employees_json': employees_json,
+        'default_name': default_name,
+        'default_designation': default_desig,
+        'today_date': timezone.localdate().strftime('%Y-%m-%d'),
+        'categories': ManpowerCategory.choices,
+        'types': ManpowerType.choices,
+        'site_statuses': SiteReport.SiteStatus.choices,
+        'machinery_ownerships': MachineryOwnership.choices,
+        'billing_bases': MachineryBillingBasis.choices,
+        'visit_types': VisitType.choices,
+        'is_admin': request.user.is_superuser or (user_profile and user_profile.is_admin),
+    }
+    return render(request, 'reports/report_form.html', context)
+
+
+@login_required
+def report_edit_view(request, pk):
+    report = get_object_or_404(SiteReport, pk=pk)
+    user_profile = getattr(request.user, 'profile', None)
+    is_admin = request.user.is_superuser or (user_profile and user_profile.is_admin)
+
+    # Permission check: cannot edit approved reports unless admin
+    if report.status == SiteReport.ReportStatus.APPROVED and not is_admin:
+        messages.error(request, "Approved reports are locked and cannot be edited.")
+        return redirect('report_detail', pk=report.pk)
+
+    if request.method == 'POST':
+        action = request.POST.get('action', 'save_draft')
+        report_data = {
+            'site': request.POST.get('site'),
+            'report_date': request.POST.get('report_date'),
+            'site_status': request.POST.get('site_status'),
+            'reported_by_name': request.POST.get('reported_by_name'),
+            'reported_by_designation': request.POST.get('reported_by_designation'),
+            'company_employees_on_site': request.POST.get('company_employees_on_site', ''),
+            'work_done_today': request.POST.get('work_done_today', ''),
+            'remarks': request.POST.get('remarks', ''),
+            'allow_duplicate': request.POST.get('allow_duplicate') == '1',
+        }
+
+        # Parse Manpower rows
+        manpower_rows = []
+        categories = request.POST.getlist('manpower_category[]')
+        types = request.POST.getlist('manpower_type[]')
+        counts = request.POST.getlist('manpower_count[]')
+        rates = request.POST.getlist('manpower_rate[]')
+        remarks_list = request.POST.getlist('manpower_remarks[]')
+
+        for i in range(len(categories)):
+            if i < len(counts) and counts[i]:
+                manpower_rows.append({
+                    'category': categories[i],
+                    'type': types[i] if i < len(types) else '',
+                    'worker_count': counts[i],
+                    'rate_per_head': rates[i] if i < len(rates) else '0',
+                    'remarks': remarks_list[i] if i < len(remarks_list) else '',
+                })
+
+        # Parse Machinery rows
+        machinery_rows = []
+        machines = request.POST.getlist('machine_name[]')
+        ownerships = request.POST.getlist('machine_ownership[]')
+        quantities = request.POST.getlist('machine_quantity[]')
+        billing_bases = request.POST.getlist('machine_billing_basis[]')
+        usages = request.POST.getlist('machine_usage[]')
+        machinery_rates = request.POST.getlist('machine_rate[]')
+        machinery_remarks = request.POST.getlist('machine_remarks[]')
+
+        for i in range(len(machines)):
+            if machines[i].strip():
+                machinery_rows.append({
+                    'machine_name': machines[i],
+                    'ownership': ownerships[i] if i < len(ownerships) else 'RENTAL',
+                    'quantity': quantities[i] if i < len(quantities) else '1',
+                    'billing_basis': billing_bases[i] if i < len(billing_bases) else 'DAY',
+                    'usage_value': usages[i] if i < len(usages) else '1',
+                    'rate': machinery_rates[i] if i < len(machinery_rates) else '0',
+                    'remarks': machinery_remarks[i] if i < len(machinery_remarks) else '',
+                })
+
+        # Parse Employee Visits rows
+        employee_rows = []
+        emp_ids = request.POST.getlist('employee_id[]')
+        visit_types = request.POST.getlist('visit_type[]')
+        hours_list = request.POST.getlist('hours_spent[]')
+        applied_rates = request.POST.getlist('applied_rate[]')
+        emp_remarks = request.POST.getlist('employee_remarks[]')
+
+        for i in range(len(emp_ids)):
+            if emp_ids[i]:
+                employee_rows.append({
+                    'employee_id': emp_ids[i],
+                    'visit_type': visit_types[i] if i < len(visit_types) else 'FULL_DAY',
+                    'hours_spent': hours_list[i] if i < len(hours_list) else '0',
+                    'applied_rate': applied_rates[i] if i < len(applied_rates) else '0',
+                    'remarks': emp_remarks[i] if i < len(emp_remarks) else '',
+                })
+
+        # Parse Tools Used rows
+        tool_rows = []
+        t_names = request.POST.getlist('tool_name[]')
+        t_qtys = request.POST.getlist('tool_quantity[]')
+        t_users = request.POST.getlist('tool_used_by[]')
+        t_remarks = request.POST.getlist('tool_remarks[]')
+
+        for i in range(len(t_names)):
+            if t_names[i].strip():
+                tool_rows.append({
+                    'tool_name': t_names[i].strip(),
+                    'quantity': t_qtys[i] if i < len(t_qtys) and t_qtys[i] else 1,
+                    'used_by': t_users[i].strip() if i < len(t_users) else '',
+                    'remarks': t_remarks[i].strip() if i < len(t_remarks) else '',
+                })
+
+        try:
+            saved_report = ReportService.save_report(
+                user=request.user,
+                report_data=report_data,
+                manpower_rows=manpower_rows,
+                machinery_rows=machinery_rows,
+                employee_rows=employee_rows,
+                submit_action=action,
+                existing_report=report,
+                tool_rows=tool_rows,
+            )
+            verb = "submitted for approval" if action == 'submit' else "updated successfully"
+            messages.success(request, f"Daily Site Report {verb}!")
+            return redirect('report_detail', pk=saved_report.pk)
+        except ValidationError as e:
+            if hasattr(e, 'message_dict'):
+                err_text = "; ".join([f"{k.replace('_', ' ').title()}: {', '.join(v)}" for k, v in e.message_dict.items()])
+            elif hasattr(e, 'messages'):
+                err_text = "; ".join(e.messages)
+            else:
+                err_text = str(e)
+            messages.error(request, f"Validation Error: {err_text}")
+        except Exception as e:
+            messages.error(request, f"Error updating report: {str(e)}")
+
+    # GET
+    sites = Site.objects.all()
+    employees = Employee.objects.filter(is_active=True).order_by('name')
+
+    employees_json = json.dumps([
+        {
+            'id': emp.id,
+            'name': emp.name,
+            'designation': emp.designation,
+            'daily_rate': float(emp.daily_rate),
+            'hourly_rate': float(emp.hourly_rate),
+        }
+        for emp in employees
+    ])
+
+    context = {
+        'report': report,
+        'sites': sites,
+        'employees': employees,
+        'employees_json': employees_json,
+        'categories': ManpowerCategory.choices,
+        'types': ManpowerType.choices,
+        'site_statuses': SiteReport.SiteStatus.choices,
+        'machinery_ownerships': MachineryOwnership.choices,
+        'billing_bases': MachineryBillingBasis.choices,
+        'visit_types': VisitType.choices,
+        'is_admin': is_admin,
+        'is_edit': True,
+    }
+    return render(request, 'reports/report_form.html', context)
+
+
+@login_required
+def report_submit_view(request, pk):
+    report = get_object_or_404(SiteReport, pk=pk)
+    if request.method == 'POST':
+        ReportService.submit_report(report, request.user)
+        messages.success(request, f"Report for '{report.site.name}' on {report.report_date} has been submitted for approval.")
+    return redirect('report_detail', pk=pk)
+
+
+@login_required
+@management_required
+def report_approve_view(request, pk):
+    report = get_object_or_404(SiteReport, pk=pk)
+    if request.method == 'POST':
+        ReportService.approve_report(report, request.user)
+        messages.success(request, f"Report for '{report.site.name}' on {report.report_date} has been APPROVED.")
+    return redirect('report_detail', pk=pk)
+
+
+@login_required
+@management_required
+def report_return_view(request, pk):
+    report = get_object_or_404(SiteReport, pk=pk)
+    if request.method == 'POST':
+        form = ReturnReportForm(request.POST)
+        if form.is_valid():
+            remarks = form.cleaned_data['rejection_remarks']
+            ReportService.return_report(report, request.user, remarks)
+            messages.warning(request, f"Report returned for correction. Site Engineer notified.")
+        else:
+            messages.error(request, "Please enter remarks explaining why the report is being returned.")
+    return redirect('report_detail', pk=pk)
+
+
+@login_required
+def report_delete_view(request, pk):
+    report = get_object_or_404(SiteReport, pk=pk)
+    user_profile = getattr(request.user, 'profile', None)
+    is_admin = request.user.is_superuser or (user_profile and user_profile.is_admin)
+
+    # Site engineer can only delete draft reports they created
+    if not is_admin:
+        if report.status != SiteReport.ReportStatus.DRAFT or report.reported_by_user != request.user:
+            messages.error(request, "You can only delete your own draft reports.")
+            return redirect('report_detail', pk=pk)
+
+    if request.method == 'POST':
+        site_name = report.site.name
+        report_date = report.report_date
+        report.delete()
+        messages.success(request, f"Draft report for '{site_name}' on {report_date} was deleted.")
+        return redirect('report_list')
+
+    return render(request, 'reports/report_confirm_delete.html', {'report': report})
+
+
+@login_required
+def report_print_view(request, pk):
+    """
+    Renders dedicated print view for clean paper/PDF output.
+    """
+    report = get_object_or_404(
+        SiteReport.objects.select_related('site', 'reported_by_user', 'approved_by'),
+        pk=pk
+    )
+    return render(request, 'reports/report_print.html', {
+        'report': report,
+        'manpower_entries': report.manpower_entries.all(),
+        'machinery_entries': report.machinery_entries.all(),
+        'employee_visits': report.employee_visits.select_related('employee').all(),
+        'generated_at': timezone.now(),
+    })
+
+
+@login_required
+def report_excel_export_view(request, pk):
+    report = get_object_or_404(
+        SiteReport.objects.select_related('site', 'reported_by_user', 'approved_by'),
+        pk=pk
+    )
+    excel_stream = export_single_report_to_excel(report)
+    filename = f"DSR_{report.site.code}_{report.report_date.strftime('%Y%m%d')}.xlsx"
+    response = HttpResponse(
+        excel_stream.getvalue(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
+
+
+@login_required
+def reports_bulk_excel_export_view(request):
+    reports = SiteReport.objects.select_related('site', 'reported_by_user').all()
+
+    site_id = request.GET.get('site_id', '')
+    status = request.GET.get('status', '')
+    date_from = request.GET.get('date_from', '')
+    date_to = request.GET.get('date_to', '')
+
+    if site_id:
+        reports = reports.filter(site_id=site_id)
+    if status:
+        reports = reports.filter(status=status)
+    if date_from:
+        reports = reports.filter(report_date__gte=date_from)
+    if date_to:
+        reports = reports.filter(report_date__lte=date_to)
+
+    excel_stream = export_bulk_reports_to_excel(reports)
+    filename = f"Consolidated_Site_Reports_{timezone.localdate().strftime('%Y%m%d')}.xlsx"
+    response = HttpResponse(
+        excel_stream.getvalue(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
+
+
+# -------------------------------------------------------------
+# MASTER DATA MANAGEMENT VIEWS (ADMIN ONLY)
+# -------------------------------------------------------------
+
+@login_required
+def site_list_view(request):
+    sites = Site.objects.annotate(
+        reports_count=Count('reports'),
+        total_spent=Sum('reports__total_site_cost')
+    ).all()
+    user_profile = getattr(request.user, 'profile', None)
+    is_admin = request.user.is_superuser or (user_profile and user_profile.is_admin)
+    return render(request, 'master/site_list.html', {'sites': sites, 'is_admin': is_admin})
+
+
+@login_required
+def site_detail_view(request, pk):
+    """
+    Detailed work timeline & cost analytics for a specific site.
+    Shows day-by-day 'Kis din kya kaam hua', manpower, machinery,
+    employee visits, tools used, and week/month/year aggregation.
+    """
+    site = get_object_or_404(Site, pk=pk)
+    
+    # Filter parameters
+    period = request.GET.get('period', 'all')
+    date_from = request.GET.get('date_from', '')
+    date_to = request.GET.get('date_to', '')
+    query = request.GET.get('q', '').strip()
+    status_filter = request.GET.get('status', '')
+
+    today = timezone.localdate()
+    reports_qs = site.reports.prefetch_related(
+        'manpower_entries', 'machinery_entries', 'employee_visits__employee', 'tool_entries'
+    ).order_by('-report_date')
+
+    # Apply quick period filters
+    if period == 'this_week':
+        start_of_week = today - timedelta(days=today.weekday())
+        reports_qs = reports_qs.filter(report_date__gte=start_of_week, report_date__lte=today)
+    elif period == 'this_month':
+        reports_qs = reports_qs.filter(report_date__year=today.year, report_date__month=today.month)
+    elif period == 'last_month':
+        first_of_month = today.replace(day=1)
+        last_month_end = first_of_month - timedelta(days=1)
+        reports_qs = reports_qs.filter(report_date__year=last_month_end.year, report_date__month=last_month_end.month)
+    elif period == 'this_year':
+        reports_qs = reports_qs.filter(report_date__year=today.year)
+    elif period == 'custom':
+        if date_from:
+            reports_qs = reports_qs.filter(report_date__gte=date_from)
+        if date_to:
+            reports_qs = reports_qs.filter(report_date__lte=date_to)
+
+    if date_from and period != 'custom':
+        reports_qs = reports_qs.filter(report_date__gte=date_from)
+    if date_to and period != 'custom':
+        reports_qs = reports_qs.filter(report_date__lte=date_to)
+
+    if status_filter:
+        reports_qs = reports_qs.filter(status=status_filter)
+
+    if query:
+        reports_qs = reports_qs.filter(
+            Q(work_done_today__icontains=query) |
+            Q(reported_by_name__icontains=query) |
+            Q(remarks__icontains=query)
+        )
+
+    # Aggregates for the filtered reports
+    aggregates = reports_qs.aggregate(
+        total_cost=Sum('total_site_cost'),
+        total_manpower_cost=Sum('total_manpower_cost'),
+        total_machinery_cost=Sum('total_machinery_cost'),
+        total_employee_cost=Sum('total_employee_cost'),
+        total_workers=Sum('total_manpower_count'),
+    )
+
+    total_cost = aggregates['total_cost'] or Decimal('0.00')
+    total_manpower_cost = aggregates['total_manpower_cost'] or Decimal('0.00')
+    total_machinery_cost = aggregates['total_machinery_cost'] or Decimal('0.00')
+    total_employee_cost = aggregates['total_employee_cost'] or Decimal('0.00')
+    total_workers = aggregates['total_workers'] or 0
+    days_reported_count = reports_qs.count()
+
+    # Monthly breakdown for this site (Year/Month aggregation)
+    monthly_summary = (
+        site.reports
+        .values('report_date__year', 'report_date__month')
+        .annotate(
+            month_cost=Sum('total_site_cost'),
+            month_workers=Sum('total_manpower_count'),
+            reports_count=Count('id')
+        )
+        .order_by('-report_date__year', '-report_date__month')
+    )
+
+    user_profile = getattr(request.user, 'profile', None)
+    is_admin = request.user.is_superuser or (user_profile and user_profile.is_admin)
+
+    context = {
+        'site': site,
+        'reports': reports_qs,
+        'total_cost': total_cost,
+        'total_manpower_cost': total_manpower_cost,
+        'total_machinery_cost': total_machinery_cost,
+        'total_employee_cost': total_employee_cost,
+        'total_workers': total_workers,
+        'days_reported_count': days_reported_count,
+        'monthly_summary': monthly_summary,
+        'period': period,
+        'date_from': date_from,
+        'date_to': date_to,
+        'search_query': query,
+        'status_filter': status_filter,
+        'statuses': SiteReport.ReportStatus.choices,
+        'is_admin': is_admin,
+    }
+    return render(request, 'reports/site_detail.html', context)
+
+
+@login_required
+@admin_required
+def site_create_view(request):
+    if request.method == 'POST':
+        form = SiteForm(request.POST)
+        if form.is_valid():
+            site = form.save()
+            messages.success(request, f"Site '{site.name}' added successfully.")
+            return redirect('site_list')
+    else:
+        form = SiteForm()
+    return render(request, 'master/site_form.html', {'form': form, 'title': 'Add New Site'})
+
+
+@login_required
+@admin_required
+def site_edit_view(request, pk):
+    site = get_object_or_404(Site, pk=pk)
+    if request.method == 'POST':
+        form = SiteForm(request.POST, instance=site)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f"Site '{site.name}' updated successfully.")
+            return redirect('site_list')
+    else:
+        form = SiteForm(instance=site)
+    return render(request, 'master/site_form.html', {'form': form, 'site': site, 'title': f'Edit Site: {site.name}'})
+
+
+@login_required
+@admin_required
+def employee_list_view(request):
+    employees = Employee.objects.annotate(visits_count=Count('site_visits')).all()
+    return render(request, 'master/employee_list.html', {'employees': employees})
+
+
+@login_required
+@admin_required
+def employee_create_view(request):
+    if request.method == 'POST':
+        form = EmployeeForm(request.POST)
+        if form.is_valid():
+            employee = form.save()
+            messages.success(request, f"Employee '{employee.name}' registered successfully.")
+            return redirect('employee_list')
+    else:
+        form = EmployeeForm()
+    return render(request, 'master/employee_form.html', {'form': form, 'title': 'Register New Employee'})
+
+
+@login_required
+@admin_required
+def employee_edit_view(request, pk):
+    employee = get_object_or_404(Employee, pk=pk)
+    if request.method == 'POST':
+        form = EmployeeForm(request.POST, instance=employee)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f"Employee '{employee.name}' updated successfully.")
+            return redirect('employee_list')
+    else:
+        form = EmployeeForm(instance=employee)
+    return render(request, 'master/employee_form.html', {'form': form, 'employee': employee, 'title': f'Edit Employee: {employee.name}'})
+
+
+@login_required
+@admin_required
+def user_list_view(request):
+    users = User.objects.select_related('profile').all().order_by('-date_joined')
+    return render(request, 'master/user_list.html', {'users': users})
+
+
+@login_required
+@admin_required
+def user_create_view(request):
+    if request.method == 'POST':
+        username = request.POST.get('username')
+        email = request.POST.get('email', '')
+        first_name = request.POST.get('first_name', '')
+        last_name = request.POST.get('last_name', '')
+        password = request.POST.get('password')
+        role = request.POST.get('role', UserRole.SITE_ENGINEER)
+        designation = request.POST.get('designation', '')
+        phone = request.POST.get('phone', '')
+        assigned_sites = request.POST.getlist('assigned_sites')
+
+        if User.objects.filter(username=username).exists():
+            messages.error(request, f"Username '{username}' is already taken.")
+        else:
+            user = User.objects.create_user(
+                username=username,
+                email=email,
+                first_name=first_name,
+                last_name=last_name,
+                password=password or 'Vikas@123'
+            )
+            if role == UserRole.ADMIN:
+                user.is_staff = True
+                user.save(update_fields=['is_staff'])
+
+            profile, _ = UserProfile.objects.get_or_create(user=user)
+            profile.role = role
+            profile.designation = designation
+            profile.phone = phone
+            profile.save()
+            if assigned_sites:
+                profile.assigned_sites.set(assigned_sites)
+
+            messages.success(request, f"User '{username}' created successfully.")
+            return redirect('user_list')
+    sites = Site.objects.all()
+    return render(request, 'master/user_form.html', {
+        'sites': sites,
+        'roles': UserRole.choices,
+        'title': 'Create New User'
+    })
+
+
+@login_required
+@admin_required
+def user_edit_view(request, pk):
+    target_user = get_object_or_404(User, pk=pk)
+    profile, _ = UserProfile.objects.get_or_create(user=target_user)
+
+    if request.method == 'POST':
+        target_user.first_name = request.POST.get('first_name', '')
+        target_user.last_name = request.POST.get('last_name', '')
+        target_user.email = request.POST.get('email', '')
+        new_password = request.POST.get('password')
+        if new_password:
+            target_user.set_password(new_password)
+
+        role = request.POST.get('role', profile.role)
+        target_user.is_staff = (role == UserRole.ADMIN)
+        target_user.save()
+
+        profile.role = role
+        profile.designation = request.POST.get('designation', '')
+        profile.phone = request.POST.get('phone', '')
+        profile.save()
+
+        assigned_sites = request.POST.getlist('assigned_sites')
+        profile.assigned_sites.set(assigned_sites)
+
+        messages.success(request, f"User '{target_user.username}' updated successfully.")
+        return redirect('user_list')
+
+    sites = Site.objects.all()
+    user_assigned_site_ids = list(profile.assigned_sites.values_list('id', flat=True))
+
+    return render(request, 'master/user_form.html', {
+        'target_user': target_user,
+        'profile': profile,
+        'sites': sites,
+        'roles': UserRole.choices,
+        'user_assigned_site_ids': user_assigned_site_ids,
+        'title': f'Edit User: {target_user.username}'
+    })
+
+
+# -------------------------------------------------------------
+# REST / JSON API ENDPOINTS FOR FRONTEND INTERACTIVITY
+# -------------------------------------------------------------
+
+@login_required
+def api_employee_detail(request, pk):
+    """Returns employee rates and designation for live autofill."""
+    emp = get_object_or_404(Employee, pk=pk)
+    return JsonResponse({
+        'id': emp.id,
+        'name': emp.name,
+        'designation': emp.designation,
+        'daily_rate': float(emp.daily_rate),
+        'hourly_rate': float(emp.hourly_rate),
+        'phone': emp.phone,
+    })
+
+
+@login_required
+def api_check_duplicate_report(request):
+    """
+    Check if a report already exists for site_id and date.
+    Returns {exists: bool, report_id: int|None}
+    """
+    site_id = request.GET.get('site_id')
+    date_str = request.GET.get('date')
+    exclude_id = request.GET.get('exclude_id')
+
+    if not site_id or not date_str:
+        return JsonResponse({'exists': False})
+
+    qs = SiteReport.objects.filter(site_id=site_id, report_date=date_str)
+    if exclude_id and exclude_id.isdigit():
+        qs = qs.exclude(pk=int(exclude_id))
+
+    exists = qs.exists()
+    existing_rep = qs.first() if exists else None
+
+    return JsonResponse({
+        'exists': exists,
+        'report_id': existing_rep.id if existing_rep else None,
+        'status': existing_rep.get_status_display() if existing_rep else None,
+    })
+
+
+@login_required
+def api_check_employee_visit(request):
+    """
+    Checks if an employee has already been allocated a visit on a date at other sites.
+    """
+    emp_id = request.GET.get('employee_id')
+    date_str = request.GET.get('date')
+    visit_type = request.GET.get('visit_type', VisitType.FULL_DAY)
+    exclude_report_id = request.GET.get('exclude_report_id')
+
+    if not emp_id or not date_str:
+        return JsonResponse({'valid': True})
+
+    other_visits = EmployeeSiteVisit.objects.filter(
+        employee_id=emp_id,
+        site_report__report_date=date_str
+    )
+    if exclude_report_id and exclude_report_id.isdigit():
+        other_visits = other_visits.exclude(site_report_id=int(exclude_report_id))
+
+    has_full_day = other_visits.filter(visit_type=VisitType.FULL_DAY).exists()
+    half_day_count = other_visits.filter(visit_type=VisitType.HALF_DAY).count()
+
+    valid = True
+    msg = ""
+
+    if visit_type == VisitType.FULL_DAY and (has_full_day or half_day_count > 0):
+        valid = False
+        sites_list = ", ".join([v.site_report.site.name for v in other_visits if v.visit_type in (VisitType.FULL_DAY, VisitType.HALF_DAY)])
+        msg = f"Employee is already allocated on {date_str} at: {sites_list}. Cannot allocate Full Day again."
+    elif visit_type == VisitType.HALF_DAY and (has_full_day or half_day_count >= 2):
+        valid = False
+        sites_list = ", ".join([v.site_report.site.name for v in other_visits if v.visit_type in (VisitType.FULL_DAY, VisitType.HALF_DAY)])
+        msg = f"Employee has already reached daily allocation (1.0 day) on {date_str} at: {sites_list}."
+
+    return JsonResponse({
+        'valid': valid,
+        'message': msg
+    })

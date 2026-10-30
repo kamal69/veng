@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% load humanize %}
+
+{% block title %}Employee Cash Ledgers | Vikas Engineering{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-2">
+    <!-- Header -->
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+        <div>
+            <h3 class="fw-bold mb-1 text-dark">
+                <i class="bi bi-journal-bookmark text-primary me-2"></i>Employee Cash Ledgers
+            </h3>
+            <p class="text-muted small mb-0">Select an employee to view their detailed transaction history, running balance, and add entries</p>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{% url 'expenses:transfers_list' %}" class="btn btn-outline-warning btn-sm d-flex align-items-center gap-1 shadow-sm">
+                <i class="bi bi-arrow-left-right"></i> Internal Transfers
+            </a>
+            <a href="{% url 'expenses:dashboard' %}" class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1 shadow-sm">
+                <i class="bi bi-speedometer2"></i> Dashboard
+            </a>
+        </div>
+    </div>
+
+    <!-- Employee Cards Grid -->
+    <div class="row g-4">
+        {% for card in emp_cards %}
+        <div class="col-12 col-md-6 col-xl-4">
+            <div class="card border-0 shadow-sm h-100 hover-shadow transition-all">
+                <div class="card-body p-4 d-flex flex-column">
+                    <!-- Top row: Avatar & Status -->
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="avatar-box bg-primary bg-opacity-10 text-primary fw-bold fs-4 rounded-3 d-flex align-items-center justify-content-center" style="width: 50px; height: 50px;">
+                                {{ card.employee.name|slice:":1" }}
+                            </div>
+                            <div>
+                                <h5 class="fw-bold mb-0 text-dark">{{ card.employee.name }}</h5>
+                                <span class="text-muted extra-small">{{ card.employee.designation|default:"Operations Staff" }}</span>
+                            </div>
+                        </div>
+                        {% if card.current_balance < 0 %}
+                            <span class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25 px-2 py-1">
+                                Debit Advance
+                            </span>
+                        {% else %}
+                            <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 px-2 py-1">
+                                Cash in Hand
+                            </span>
+                        {% endif %}
+                    </div>
+
+                    <!-- Available Balance Display -->
+                    <div class="p-3 rounded-3 mb-3 {% if card.current_balance < 0 %}bg-danger bg-opacity-10 text-danger{% else %}bg-success bg-opacity-10 text-success{% endif %}">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="small fw-semibold">Available Balance:</span>
+                            <span class="fs-4 fw-bold">₹{{ card.current_balance|floatformat:2|intcomma }}</span>
+                        </div>
+                    </div>
+
+                    <!-- Financial Breakdown Stats -->
+                    <div class="row g-2 mb-4 small">
+                        <div class="col-6">
+                            <div class="p-2 border rounded bg-light">
+                                <span class="text-muted extra-small d-block">Opening Bal</span>
+                                <span class="fw-semibold text-dark">₹{{ card.opening_balance|floatformat:2|intcomma }}</span>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="p-2 border rounded bg-light">
+                                <span class="text-muted extra-small d-block">Total Cash In</span>
+                                <span class="fw-semibold text-success">+₹{{ card.cash_in|floatformat:2|intcomma }}</span>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="p-2 border rounded bg-light">
+                                <span class="text-muted extra-small d-block">Total Expenses</span>
+                                <span class="fw-semibold text-danger">-₹{{ card.expenses|floatformat:2|intcomma }}</span>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="p-2 border rounded bg-light">
+                                <span class="text-muted extra-small d-block">Total Cash Out</span>
+                                <span class="fw-semibold text-warning">-₹{{ card.cash_out|floatformat:2|intcomma }}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Card Footer Actions -->
+                    <div class="mt-auto pt-3 border-top d-flex justify-content-between align-items-center">
+                        <span class="text-muted extra-small">
+                            <i class="bi bi-receipt me-1"></i>{{ card.txn_count }} Transactions
+                        </span>
+                        <div class="d-flex gap-2">
+                            <a href="{% url 'expenses:export_ledger_excel' card.employee.id %}" class="btn btn-outline-success btn-sm" title="Export Excel">
+                                <i class="bi bi-file-earmark-excel"></i>
+                            </a>
+                            <a href="{% url 'expenses:employee_ledger' card.employee.id %}" class="btn btn-primary btn-sm px-3">
+                                View Full Ledger <i class="bi bi-arrow-right ms-1"></i>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

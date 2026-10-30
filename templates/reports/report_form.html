@@ -1,0 +1,1000 @@
+{% extends 'base.html' %}
+{% load custom_filters %}
+
+{% block title %}{% if is_edit %}Edit Site Report #{{ report.id }}{% else %}New Daily Site Report{% endif %} - Vikas Engineering{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+    <div>
+        <h3 class="fw-bold text-dark mb-1">
+            <i class="bi bi-file-earmark-plus text-primary me-2"></i>
+            {% if is_edit %}Edit Daily Site Report #{{ report.id }}{% else %}Create Daily Site Report{% endif %}
+        </h3>
+        <p class="text-muted small mb-0">Record daily site progress, manpower attendance, machinery utilization and employee visits.</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{% if is_edit %}{% url 'report_detail' report.id %}{% else %}{% url 'report_list' %}{% endif %}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-left"></i> Back
+        </a>
+    </div>
+</div>
+
+<form method="post" id="dailyReportForm" onsubmit="return validateBeforeSubmit(event)">
+    {% csrf_token %}
+
+    <!-- SECTION 1: REPORT HEADER & SITE METADATA -->
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-header bg-white py-3">
+            <h5 class="fw-bold text-primary mb-0"><i class="bi bi-info-circle me-2"></i> 1. Report Header & Site Details</h5>
+        </div>
+        <div class="card-body p-4">
+            <div class="row g-3">
+                <div class="col-12 col-md-4">
+                    <label for="reportDateInput" class="form-label fw-semibold">Reporting Date <span class="text-danger">*</span></label>
+                    <input type="date" name="report_date" id="reportDateInput" class="form-control" required
+                           value="{% if report %}{{ report.report_date|date:'Y-m-d' }}{% else %}{{ today_date }}{% endif %}"
+                           onchange="checkDuplicateReport()">
+                    <div id="duplicateWarning" class="form-text text-danger d-none fw-semibold">
+                        <i class="bi bi-exclamation-triangle-fill"></i> Warning: A report already exists for this site and date.
+                    </div>
+                </div>
+
+                <div class="col-12 col-md-5">
+                    <label for="siteSelect" class="form-label fw-semibold">Construction Site <span class="text-danger">*</span></label>
+                    <select name="site" id="siteSelect" class="form-select" required onchange="checkDuplicateReport()">
+                        <option value="">-- Select Construction Site --</option>
+                        {% for s in sites %}
+                            <option value="{{ s.id }}" {% if report and report.site.id == s.id %}selected{% endif %}>
+                                {{ s.name }} ({{ s.code }}) - {{ s.location }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-12 col-md-3">
+                    <label for="siteStatusSelect" class="form-label fw-semibold">Site Working Status <span class="text-danger">*</span></label>
+                    <select name="site_status" id="siteStatusSelect" class="form-select" required>
+                        {% for code, label in site_statuses %}
+                            <option value="{{ code }}" {% if report and report.site_status == code %}selected{% endif %}>
+                                {{ label }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-12 col-md-4">
+                    <label class="form-label fw-semibold">Reported By (Engineer Name) <span class="text-danger">*</span></label>
+                    <input type="text" name="reported_by_name" class="form-control" required
+                           value="{% if report %}{{ report.reported_by_name }}{% else %}{{ default_name }}{% endif %}">
+                </div>
+
+                <div class="col-12 col-md-4">
+                    <label class="form-label fw-semibold">Designation <span class="text-danger">*</span></label>
+                    <input type="text" name="reported_by_designation" class="form-control" required
+                           value="{% if report %}{{ report.reported_by_designation }}{% else %}{{ default_designation }}{% endif %}">
+                </div>
+
+                <div class="col-12 col-md-4">
+                    <label class="form-label fw-semibold">Company Employees on Site</label>
+                    <input type="text" name="company_employees_on_site" class="form-control" placeholder="e.g. Amit Verma (SE), Rajesh (Safety)"
+                           value="{% if report %}{{ report.company_employees_on_site }}{% endif %}">
+                </div>
+
+                <div class="col-12 mt-2">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" name="allow_duplicate" value="1" id="allowDuplicateSwitch"
+                               {% if report and report.allow_duplicate %}checked{% endif %}>
+                        <label class="form-check-label fw-medium text-muted" for="allowDuplicateSwitch">
+                            {% if is_admin %}<span class="badge bg-danger me-1">Admin Override</span>{% endif %}
+                            Allow Additional Report for this Site & Date (e.g. second shift or separate contractor)
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SECTION 2: MANPOWER AT SITE -->
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-header bg-white py-3 d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2">
+            <div>
+                <h5 class="fw-bold text-primary mb-0"><i class="bi bi-people-fill me-2"></i> 2. Manpower Section</h5>
+                <small class="text-muted">Formula: Total = Worker Count &times; Rate per Head</small>
+            </div>
+            <button type="button" class="btn btn-outline-primary btn-sm d-flex align-items-center gap-1" onclick="addManpowerRow()">
+                <i class="bi bi-plus-circle"></i> + Add Manpower
+            </button>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-bordered align-middle mb-0" id="manpowerTable">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 20%;">Category <span class="text-danger">*</span></th>
+                            <th style="width: 18%;">Type <span class="text-danger">*</span></th>
+                            <th style="width: 14%;" class="text-end">No. of Workers <span class="text-danger">*</span></th>
+                            <th style="width: 16%;" class="text-end">Rate per Head (₹) <span class="text-danger">*</span></th>
+                            <th style="width: 16%;" class="text-end">Total (₹)</th>
+                            <th style="width: 12%;">Remarks</th>
+                            <th style="width: 4%;" class="text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="manpowerBody">
+                        {% if report and report.manpower_entries.all %}
+                            {% for m in report.manpower_entries.all %}
+                            <tr>
+                                <td>
+                                    <select name="manpower_category[]" class="form-select form-select-sm" required>
+                                        {% for c, c_lbl in categories %}
+                                            <option value="{{ c }}" {% if m.category == c %}selected{% endif %}>{{ c_lbl }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                                <td>
+                                    <select name="manpower_type[]" class="form-select form-select-sm" required>
+                                        {% for t, t_lbl in types %}
+                                            <option value="{{ t }}" {% if m.type == t %}selected{% endif %}>{{ t_lbl }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                                <td>
+                                    <input type="number" name="manpower_count[]" class="form-control form-control-sm text-end mp-count" min="1" step="1" required value="{{ m.worker_count }}" oninput="recalcManpowerRow(this)">
+                                </td>
+                                <td>
+                                    <input type="number" name="manpower_rate[]" class="form-control form-control-sm text-end mp-rate" min="0" step="0.01" required value="{{ m.rate_per_head }}" oninput="recalcManpowerRow(this)">
+                                </td>
+                                <td>
+                                    <input type="text" class="form-control form-control-sm text-end mp-total bg-light fw-bold" readonly value="₹ {{ m.total_cost }}">
+                                </td>
+                                <td>
+                                    <input type="text" name="manpower_remarks[]" class="form-control form-control-sm" placeholder="Optional notes" value="{{ m.remarks }}">
+                                </td>
+                                <td class="text-center">
+                                    <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2" onclick="removeRowConfirm(this)" title="Delete Row">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <!-- Default 1 empty row -->
+                            <tr>
+                                <td>
+                                    <select name="manpower_category[]" class="form-select form-select-sm" required>
+                                        {% for c, c_lbl in categories %}
+                                            <option value="{{ c }}">{{ c_lbl }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                                <td>
+                                    <select name="manpower_type[]" class="form-select form-select-sm" required>
+                                        {% for t, t_lbl in types %}
+                                            <option value="{{ t }}">{{ t_lbl }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                                <td>
+                                    <input type="number" name="manpower_count[]" class="form-control form-control-sm text-end mp-count" min="1" step="1" required value="10" oninput="recalcManpowerRow(this)">
+                                </td>
+                                <td>
+                                    <input type="number" name="manpower_rate[]" class="form-control form-control-sm text-end mp-rate" min="0" step="0.01" required value="650.00" oninput="recalcManpowerRow(this)">
+                                </td>
+                                <td>
+                                    <input type="text" class="form-control form-control-sm text-end mp-total bg-light fw-bold" readonly value="₹ 6,500.00">
+                                </td>
+                                <td>
+                                    <input type="text" name="manpower_remarks[]" class="form-control form-control-sm" placeholder="General civil work">
+                                </td>
+                                <td class="text-center">
+                                    <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2" onclick="removeRowConfirm(this)" title="Delete Row">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                    <tfoot class="table-light">
+                        <tr>
+                            <th colspan="2" class="text-end">Manpower Subtotal:</th>
+                            <th class="text-end" id="manpowerTotalCount">0 workers</th>
+                            <th></th>
+                            <th class="text-end text-primary fw-bold" id="manpowerTotalCost">₹ 0.00</th>
+                            <th colspan="2"></th>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- SECTION 3: MACHINERY AT SITE -->
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-header bg-white py-3 d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2">
+            <div>
+                <h5 class="fw-bold text-primary mb-0"><i class="bi bi-truck me-2"></i> 3. Machinery & Equipment at Site</h5>
+                <small class="text-muted">Hourly: Qty &times; Hours &times; Rate | Daily: Qty &times; Days &times; Rate | Company Owned: Rental = ₹0.00</small>
+            </div>
+            <button type="button" class="btn btn-outline-primary btn-sm d-flex align-items-center gap-1" onclick="addMachineryRow()">
+                <i class="bi bi-plus-circle"></i> + Add Machinery
+            </button>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-bordered align-middle mb-0" id="machineryTable">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 22%;">Machine Name <span class="text-danger">*</span></th>
+                            <th style="width: 14%;">Ownership <span class="text-danger">*</span></th>
+                            <th style="width: 9%;" class="text-end">Qty <span class="text-danger">*</span></th>
+                            <th style="width: 11%;">Billing Basis</th>
+                            <th style="width: 10%;" class="text-end">Usage (Hrs/Days) <span class="text-danger">*</span></th>
+                            <th style="width: 13%;" class="text-end">Rent Rate (₹)</th>
+                            <th style="width: 15%;" class="text-end">Rental Total (₹)</th>
+                            <th style="width: 6%;" class="text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="machineryBody">
+                        {% if report and report.machinery_entries.all %}
+                            {% for mac in report.machinery_entries.all %}
+                            <tr>
+                                <td>
+                                    <input type="text" name="machine_name[]" class="form-control form-control-sm" required placeholder="e.g. JCB Excavator" value="{{ mac.machine_name }}">
+                                    <input type="text" name="machine_remarks[]" class="form-control form-control-sm mt-1 text-muted small" placeholder="Remarks (optional)" value="{{ mac.remarks }}">
+                                </td>
+                                <td>
+                                    <select name="machine_ownership[]" class="form-select form-select-sm mac-ownership" onchange="recalcMachineryRow(this)">
+                                        {% for o, o_lbl in machinery_ownerships %}
+                                            <option value="{{ o }}" {% if mac.ownership == o %}selected{% endif %}>{{ o_lbl }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                                <td>
+                                    <input type="number" name="machine_quantity[]" class="form-control form-control-sm text-end mac-qty" min="0.1" step="0.5" value="{{ mac.quantity }}" oninput="recalcMachineryRow(this)">
+                                </td>
+                                <td>
+                                    <select name="machine_billing_basis[]" class="form-select form-select-sm mac-basis" onchange="recalcMachineryRow(this)">
+                                        {% for b, b_lbl in billing_bases %}
+                                            <option value="{{ b }}" {% if mac.billing_basis == b %}selected{% endif %}>{{ b_lbl }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                                <td>
+                                    <input type="number" name="machine_usage[]" class="form-control form-control-sm text-end mac-usage" min="0" step="0.5" value="{{ mac.usage_value }}" oninput="recalcMachineryRow(this)">
+                                </td>
+                                <td>
+                                    <input type="number" name="machine_rate[]" class="form-control form-control-sm text-end mac-rate" min="0" step="0.01" value="{{ mac.rate }}" oninput="recalcMachineryRow(this)">
+                                </td>
+                                <td>
+                                    <input type="text" class="form-control form-control-sm text-end mac-total bg-light fw-bold" readonly value="₹ {{ mac.rental_cost }}">
+                                </td>
+                                <td class="text-center">
+                                    <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2" onclick="removeRowConfirm(this)" title="Delete Row">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <!-- Default 1 empty machinery row -->
+                            <tr>
+                                <td>
+                                    <input type="text" name="machine_name[]" class="form-control form-control-sm" placeholder="e.g. JCB 3DX Excavator" value="JCB 3DX Excavator">
+                                    <input type="text" name="machine_remarks[]" class="form-control form-control-sm mt-1 text-muted small" placeholder="Remarks (optional)" value="Foundation excavation">
+                                </td>
+                                <td>
+                                    <select name="machine_ownership[]" class="form-select form-select-sm mac-ownership" onchange="recalcMachineryRow(this)">
+                                        {% for o, o_lbl in machinery_ownerships %}
+                                            <option value="{{ o }}">{{ o_lbl }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                                <td>
+                                    <input type="number" name="machine_quantity[]" class="form-control form-control-sm text-end mac-qty" min="0.1" step="0.5" value="1.0" oninput="recalcMachineryRow(this)">
+                                </td>
+                                <td>
+                                    <select name="machine_billing_basis[]" class="form-select form-select-sm mac-basis" onchange="recalcMachineryRow(this)">
+                                        {% for b, b_lbl in billing_bases %}
+                                            <option value="{{ b }}" {% if b == 'HOUR' %}selected{% endif %}>{{ b_lbl }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                                <td>
+                                    <input type="number" name="machine_usage[]" class="form-control form-control-sm text-end mac-usage" min="0" step="0.5" value="8.0" oninput="recalcMachineryRow(this)">
+                                </td>
+                                <td>
+                                    <input type="number" name="machine_rate[]" class="form-control form-control-sm text-end mac-rate" min="0" step="0.01" value="1250.00" oninput="recalcMachineryRow(this)">
+                                </td>
+                                <td>
+                                    <input type="text" class="form-control form-control-sm text-end mac-total bg-light fw-bold" readonly value="₹ 10,000.00">
+                                </td>
+                                <td class="text-center">
+                                    <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2" onclick="removeRowConfirm(this)" title="Delete Row">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                    <tfoot class="table-light">
+                        <tr>
+                            <th colspan="6" class="text-end">Machinery Rental Subtotal:</th>
+                            <th class="text-end text-primary fw-bold" id="machineryTotalCost">₹ 0.00</th>
+                            <th></th>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- SECTION 4: EMPLOYEE SITE VISITS -->
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-header bg-white py-3 d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2">
+            <div>
+                <h5 class="fw-bold text-primary mb-0"><i class="bi bi-person-walking me-2"></i> 4. Company Employee Site Visits</h5>
+                <small class="text-muted">Rates auto-loaded from Employee Master. Accidental cross-site duplicate billing is automatically prevented.</small>
+            </div>
+            <button type="button" class="btn btn-outline-primary btn-sm d-flex align-items-center gap-1" onclick="addEmployeeRow()">
+                <i class="bi bi-plus-circle"></i> + Add Employee Visit
+            </button>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-bordered align-middle mb-0" id="employeeTable">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 25%;">Employee</th>
+                            <th style="width: 20%;">Designation</th>
+                            <th style="width: 15%;">Visit Type</th>
+                            <th style="width: 10%;" class="text-end">Hours (if Hourly)</th>
+                            <th style="width: 14%;" class="text-end">Master Rate (₹)</th>
+                            <th style="width: 12%;" class="text-end">Allocated Cost (₹)</th>
+                            <th style="width: 4%;" class="text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="employeeBody">
+                        {% if report and report.employee_visits.all %}
+                            {% for v in report.employee_visits.all %}
+                            <tr>
+                                <td>
+                                    <select name="employee_id[]" class="form-select form-select-sm emp-select" onchange="onEmployeeSelect(this)">
+                                        <option value="">-- Choose Employee --</option>
+                                        {% for emp in employees %}
+                                            <option value="{{ emp.id }}" {% if v.employee.id == emp.id %}selected{% endif %}>
+                                                {{ emp.name }} ({{ emp.employee_id }})
+                                            </option>
+                                        {% endfor %}
+                                    </select>
+                                    <input type="text" name="employee_remarks[]" class="form-control form-control-sm mt-1 text-muted small" placeholder="Visit purpose" value="{{ v.remarks }}">
+                                </td>
+                                <td>
+                                    <input type="text" class="form-control form-control-sm bg-light emp-desig" readonly value="{{ v.designation_snapshot }}">
+                                </td>
+                                <td>
+                                    <select name="visit_type[]" class="form-select form-select-sm emp-visit-type" onchange="onVisitTypeChange(this)">
+                                        {% for vt, vt_lbl in visit_types %}
+                                            <option value="{{ vt }}" {% if v.visit_type == vt %}selected{% endif %}>{{ vt_lbl }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                                <td>
+                                    <input type="number" name="hours_spent[]" class="form-control form-control-sm text-end emp-hours" min="0" step="0.5" value="{{ v.hours_spent }}" oninput="recalcEmployeeRow(this)" {% if v.visit_type != 'HOURLY' %}disabled{% endif %}>
+                                </td>
+                                <td>
+                                    <input type="number" name="applied_rate[]" class="form-control form-control-sm text-end emp-rate" min="0" step="0.01" value="{{ v.applied_rate }}" oninput="recalcEmployeeRow(this)">
+                                </td>
+                                <td>
+                                    <input type="text" class="form-control form-control-sm text-end emp-cost bg-light fw-bold" readonly value="₹ {{ v.allocated_cost }}">
+                                </td>
+                                <td class="text-center">
+                                    <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2" onclick="removeRowConfirm(this)" title="Delete Row">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <!-- Default 1 empty employee visit row -->
+                            <tr>
+                                <td>
+                                    <select name="employee_id[]" class="form-select form-select-sm emp-select" onchange="onEmployeeSelect(this)">
+                                        <option value="">-- Choose Employee --</option>
+                                        {% for emp in employees %}
+                                            <option value="{{ emp.id }}">{{ emp.name }} ({{ emp.employee_id }})</option>
+                                        {% endfor %}
+                                    </select>
+                                    <input type="text" name="employee_remarks[]" class="form-control form-control-sm mt-1 text-muted small" placeholder="Visit purpose">
+                                </td>
+                                <td>
+                                    <input type="text" class="form-control form-control-sm bg-light emp-desig" readonly placeholder="Auto-populated">
+                                </td>
+                                <td>
+                                    <select name="visit_type[]" class="form-select form-select-sm emp-visit-type" onchange="onVisitTypeChange(this)">
+                                        {% for vt, vt_lbl in visit_types %}
+                                            <option value="{{ vt }}" {% if vt == 'FULL_DAY' %}selected{% endif %}>{{ vt_lbl }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                                <td>
+                                    <input type="number" name="hours_spent[]" class="form-control form-control-sm text-end emp-hours" min="0" step="0.5" value="0.0" disabled oninput="recalcEmployeeRow(this)">
+                                </td>
+                                <td>
+                                    <input type="number" name="applied_rate[]" class="form-control form-control-sm text-end emp-rate" min="0" step="0.01" value="0.00" oninput="recalcEmployeeRow(this)">
+                                </td>
+                                <td>
+                                    <input type="text" class="form-control form-control-sm text-end emp-cost bg-light fw-bold" readonly value="₹ 0.00">
+                                </td>
+                                <td class="text-center">
+                                    <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2" onclick="removeRowConfirm(this)" title="Delete Row">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                    <tfoot class="table-light">
+                        <tr>
+                            <th colspan="5" class="text-end">Company Employee Visit Cost Subtotal:</th>
+                            <th class="text-end text-primary fw-bold" id="employeeTotalCost">₹ 0.00</th>
+                            <th></th>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- SECTION 5: TOOLS & EQUIPMENT AT SITE TODAY -->
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-header bg-white py-3 d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2">
+            <div>
+                <h5 class="fw-bold text-primary mb-0"><i class="bi bi-tools me-2"></i> 5. Tools &amp; Equipment at Site Today</h5>
+                <small class="text-muted">Enter tools, power equipment, or safety gear used at this site today.</small>
+            </div>
+            <button type="button" class="btn btn-outline-primary btn-sm d-flex align-items-center gap-1" onclick="addToolRow()">
+                <i class="bi bi-plus-circle"></i> + Add Tool
+            </button>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-bordered align-middle mb-0" id="toolsTable">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 35%;">Tool / Equipment Name <span class="text-danger">*</span></th>
+                            <th style="width: 15%;" class="text-end">Quantity / Units</th>
+                            <th style="width: 20%;">Used By / Operator</th>
+                            <th style="width: 25%;">Task / Remarks</th>
+                            <th style="width: 5%;" class="text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="toolsBody">
+                        {% if report and report.tool_entries.all %}
+                            {% for t in report.tool_entries.all %}
+                            <tr>
+                                <td>
+                                    <input type="text" name="tool_name[]" class="form-control form-control-sm" required value="{{ t.tool_name }}" placeholder="e.g. Cut-off Saw, Hammer Drill, Needle Vibrator">
+                                </td>
+                                <td>
+                                    <input type="number" name="tool_quantity[]" class="form-control form-control-sm text-end" min="1" step="1" value="{{ t.quantity }}">
+                                </td>
+                                <td>
+                                    <input type="text" name="tool_used_by[]" class="form-control form-control-sm" value="{{ t.used_by }}" placeholder="e.g. Jahid, Devendra">
+                                </td>
+                                <td>
+                                    <input type="text" name="tool_remarks[]" class="form-control form-control-sm" value="{{ t.remarks }}" placeholder="e.g. Pier cutting / Slab vibration">
+                                </td>
+                                <td class="text-center">
+                                    <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2" onclick="removeRowConfirm(this)" title="Delete Row">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <!-- Default 1 sample empty tool row -->
+                            <tr>
+                                <td>
+                                    <input type="text" name="tool_name[]" class="form-control form-control-sm" placeholder="e.g. Cut-off Saw, Concrete Vibrator, Grinder">
+                                </td>
+                                <td>
+                                    <input type="number" name="tool_quantity[]" class="form-control form-control-sm text-end" min="1" step="1" value="1">
+                                </td>
+                                <td>
+                                    <input type="text" name="tool_used_by[]" class="form-control form-control-sm" placeholder="Operator / Staff name">
+                                </td>
+                                <td>
+                                    <input type="text" name="tool_remarks[]" class="form-control form-control-sm" placeholder="Usage / Task note">
+                                </td>
+                                <td class="text-center">
+                                    <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2" onclick="removeRowConfirm(this)" title="Delete Row">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- SECTION 6: SITE COST SUMMARY (TODAY) CARDS BANNER -->
+    <div class="card cost-summary-card mb-4 shadow p-4">
+        <h5 class="fw-bold text-white mb-3 text-uppercase letter-spacing">
+            <i class="bi bi-calculator me-2"></i> 6. Site Cost Summary (Today)
+        </h5>
+        <div class="row g-3 text-center">
+            <div class="col-12 col-sm-6 col-lg-3">
+                <div class="p-3 bg-white bg-opacity-10 rounded">
+                    <small class="text-light text-uppercase d-block mb-1">Manpower Cost</small>
+                    <h4 class="fw-bold mb-0 text-white" id="bannerManpowerCost">₹ 0.00</h4>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-lg-3">
+                <div class="p-3 bg-white bg-opacity-10 rounded">
+                    <small class="text-light text-uppercase d-block mb-1">Machinery on Rent</small>
+                    <h4 class="fw-bold mb-0 text-white" id="bannerMachineryCost">₹ 0.00</h4>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-lg-3">
+                <div class="p-3 bg-white bg-opacity-10 rounded">
+                    <small class="text-light text-uppercase d-block mb-1">Company Employee Cost</small>
+                    <h4 class="fw-bold mb-0 text-white" id="bannerEmployeeCost">₹ 0.00</h4>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-lg-3">
+                <div class="p-3 bg-success rounded border border-2 border-white">
+                    <small class="text-white text-uppercase d-block mb-1 fw-bold">TOTAL SITE COST</small>
+                    <h3 class="fw-bold mb-0 text-white" id="bannerGrandTotalCost">₹ 0.00</h3>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SECTION 7: WORK DETAILS & SITE PROGRESS -->
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-header bg-white py-3">
+            <h5 class="fw-bold text-primary mb-0"><i class="bi bi-journal-text me-2"></i> 7. Work Details &amp; Site Remarks</h5>
+        </div>
+        <div class="card-body p-4">
+            <div class="mb-3">
+                <label for="workDoneTextarea" class="form-label fw-semibold">Work Done Today <span class="text-danger">*</span></label>
+                <textarea name="work_done_today" id="workDoneTextarea" rows="4" class="form-control" required placeholder="Describe detailed engineering work performed today (e.g. Concrete poured, steel reinforcement tied, formwork erected, levels checked...)">{% if report %}{{ report.work_done_today }}{% endif %}</textarea>
+            </div>
+
+            <div class="mb-0">
+                <label for="remarksTextarea" class="form-label fw-semibold">Site Remarks / Observations</label>
+                <textarea name="remarks" id="remarksTextarea" rows="2" class="form-control" placeholder="Observations regarding site safety, quality, weather conditions or material delays...">{% if report %}{{ report.remarks }}{% endif %}</textarea>
+            </div>
+        </div>
+    </div>
+
+    <!-- ACTION BUTTONS TOOLBAR -->
+    <div class="card shadow-sm border-0 mb-5 bg-light">
+        <div class="card-body p-3 d-flex flex-column flex-sm-row justify-content-between align-items-center gap-3">
+            <a href="{% if is_edit %}{% url 'report_detail' report.id %}{% else %}{% url 'report_list' %}{% endif %}" class="btn btn-outline-secondary">
+                <i class="bi bi-x-circle"></i> Cancel
+            </a>
+            <div class="d-flex gap-2">
+                <button type="submit" name="action" value="save_draft" class="btn btn-secondary px-4">
+                    <i class="bi bi-floppy"></i> Save Draft
+                </button>
+                <button type="submit" name="action" value="submit" class="btn btn-primary px-4 shadow-sm" onclick="return confirmSubmit()">
+                    <i class="bi bi-send-check"></i> Submit Report
+                </button>
+            </div>
+        </div>
+    </div>
+</form>
+
+<!-- Modal for Row Deletion Confirmation -->
+<div class="modal fade" id="deleteRowModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h6 class="modal-title fw-bold text-danger"><i class="bi bi-exclamation-triangle"></i> Confirm Delete</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-center py-3">
+                Are you sure you want to delete this row entry?
+            </div>
+            <div class="modal-footer py-2 justify-content-center">
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-sm btn-danger" id="confirmDeleteRowBtn">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// Employee Master JSON serialized from backend
+const employeeMaster = {{ employees_json|safe }};
+const employeeLookup = {};
+employeeMaster.forEach(e => { employeeLookup[e.id] = e; });
+
+let rowToDelete = null;
+const deleteModal = new bootstrap.Modal(document.getElementById('deleteRowModal'));
+
+document.getElementById('confirmDeleteRowBtn').addEventListener('click', function() {
+    if (rowToDelete) {
+        rowToDelete.remove();
+        rowToDelete = null;
+        deleteModal.hide();
+        recalculateAll();
+    }
+});
+
+function removeRowConfirm(button) {
+    rowToDelete = button.closest('tr');
+    deleteModal.show();
+}
+
+// Format Currency INR Helper
+function formatINR(val) {
+    const num = Number(val) || 0;
+    return '₹ ' + num.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// -------------------------------------------------------------
+// MANPOWER SECTION SCRIPTS
+// -------------------------------------------------------------
+function recalcManpowerRow(inputElement) {
+    const tr = inputElement.closest('tr');
+    const count = parseFloat(tr.querySelector('.mp-count').value) || 0;
+    const rate = parseFloat(tr.querySelector('.mp-rate').value) || 0;
+    const total = count * rate;
+    tr.querySelector('.mp-total').value = formatINR(total);
+    recalculateAll();
+}
+
+function addManpowerRow() {
+    const tbody = document.getElementById('manpowerBody');
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+        <td>
+            <select name="manpower_category[]" class="form-select form-select-sm" required>
+                {% for c, c_lbl in categories %}
+                    <option value="{{ c }}">{{ c_lbl }}</option>
+                {% endfor %}
+            </select>
+        </td>
+        <td>
+            <select name="manpower_type[]" class="form-select form-select-sm" required>
+                {% for t, t_lbl in types %}
+                    <option value="{{ t }}">{{ t_lbl }}</option>
+                {% endfor %}
+            </select>
+        </td>
+        <td>
+            <input type="number" name="manpower_count[]" class="form-control form-control-sm text-end mp-count" min="1" step="1" required value="1" oninput="recalcManpowerRow(this)">
+        </td>
+        <td>
+            <input type="number" name="manpower_rate[]" class="form-control form-control-sm text-end mp-rate" min="0" step="0.01" required value="650.00" oninput="recalcManpowerRow(this)">
+        </td>
+        <td>
+            <input type="text" class="form-control form-control-sm text-end mp-total bg-light fw-bold" readonly value="₹ 650.00">
+        </td>
+        <td>
+            <input type="text" name="manpower_remarks[]" class="form-control form-control-sm" placeholder="Optional notes">
+        </td>
+        <td class="text-center">
+            <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2" onclick="removeRowConfirm(this)" title="Delete Row">
+                <i class="bi bi-trash"></i>
+            </button>
+        </td>
+    `;
+    tbody.appendChild(tr);
+    recalculateAll();
+}
+
+// -------------------------------------------------------------
+// MACHINERY SECTION SCRIPTS
+// -------------------------------------------------------------
+function recalcMachineryRow(inputElement) {
+    const tr = inputElement.closest('tr');
+    const ownership = tr.querySelector('.mac-ownership').value;
+    const qty = parseFloat(tr.querySelector('.mac-qty').value) || 0;
+    const usage = parseFloat(tr.querySelector('.mac-usage').value) || 0;
+    const rate = parseFloat(tr.querySelector('.mac-rate').value) || 0;
+
+    let rentalCost = 0;
+    if (ownership === 'COMPANY_OWNED') {
+        rentalCost = 0.00;
+        tr.querySelector('.mac-rate').classList.add('bg-light');
+    } else {
+        tr.querySelector('.mac-rate').classList.remove('bg-light');
+        rentalCost = qty * usage * rate;
+    }
+
+    tr.querySelector('.mac-total').value = formatINR(rentalCost);
+    recalculateAll();
+}
+
+function addMachineryRow() {
+    const tbody = document.getElementById('machineryBody');
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+        <td>
+            <input type="text" name="machine_name[]" class="form-control form-control-sm" required placeholder="Machine Name">
+            <input type="text" name="machine_remarks[]" class="form-control form-control-sm mt-1 text-muted small" placeholder="Remarks (optional)">
+        </td>
+        <td>
+            <select name="machine_ownership[]" class="form-select form-select-sm mac-ownership" onchange="recalcMachineryRow(this)">
+                {% for o, o_lbl in machinery_ownerships %}
+                    <option value="{{ o }}">{{ o_lbl }}</option>
+                {% endfor %}
+            </select>
+        </td>
+        <td>
+            <input type="number" name="machine_quantity[]" class="form-control form-control-sm text-end mac-qty" min="0.1" step="0.5" value="1.0" oninput="recalcMachineryRow(this)">
+        </td>
+        <td>
+            <select name="machine_billing_basis[]" class="form-select form-select-sm mac-basis" onchange="recalcMachineryRow(this)">
+                {% for b, b_lbl in billing_bases %}
+                    <option value="{{ b }}">{{ b_lbl }}</option>
+                {% endfor %}
+            </select>
+        </td>
+        <td>
+            <input type="number" name="machine_usage[]" class="form-control form-control-sm text-end mac-usage" min="0" step="0.5" value="1.0" oninput="recalcMachineryRow(this)">
+        </td>
+        <td>
+            <input type="number" name="machine_rate[]" class="form-control form-control-sm text-end mac-rate" min="0" step="0.01" value="0.00" oninput="recalcMachineryRow(this)">
+        </td>
+        <td>
+            <input type="text" class="form-control form-control-sm text-end mac-total bg-light fw-bold" readonly value="₹ 0.00">
+        </td>
+        <td class="text-center">
+            <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2" onclick="removeRowConfirm(this)" title="Delete Row">
+                <i class="bi bi-trash"></i>
+            </button>
+        </td>
+    `;
+    tbody.appendChild(tr);
+    recalculateAll();
+}
+
+// -------------------------------------------------------------
+// EMPLOYEE VISITS SCRIPTS
+// -------------------------------------------------------------
+function onEmployeeSelect(selectElem) {
+    const tr = selectElem.closest('tr');
+    const empId = selectElem.value;
+    const emp = employeeLookup[empId];
+    if (emp) {
+        tr.querySelector('.emp-desig').value = emp.designation;
+        const vType = tr.querySelector('.emp-visit-type').value;
+        const rateInput = tr.querySelector('.emp-rate');
+        if (vType === 'HOURLY') {
+            rateInput.value = emp.hourly_rate.toFixed(2);
+        } else {
+            rateInput.value = emp.daily_rate.toFixed(2);
+        }
+        recalcEmployeeRow(selectElem);
+    } else {
+        tr.querySelector('.emp-desig').value = '';
+        tr.querySelector('.emp-rate').value = '0.00';
+        tr.querySelector('.emp-cost').value = '₹ 0.00';
+        recalculateAll();
+    }
+}
+
+function onVisitTypeChange(selectElem) {
+    const tr = selectElem.closest('tr');
+    const empId = tr.querySelector('.emp-select').value;
+    const vType = selectElem.value;
+    const hoursInput = tr.querySelector('.emp-hours');
+    const rateInput = tr.querySelector('.emp-rate');
+    const emp = employeeLookup[empId];
+
+    if (vType === 'HOURLY') {
+        hoursInput.disabled = false;
+        if (parseFloat(hoursInput.value) === 0) hoursInput.value = '4.0';
+        if (emp) rateInput.value = emp.hourly_rate.toFixed(2);
+    } else {
+        hoursInput.disabled = true;
+        if (emp) rateInput.value = emp.daily_rate.toFixed(2);
+    }
+
+    recalcEmployeeRow(selectElem);
+}
+
+function recalcEmployeeRow(inputElement) {
+    const tr = inputElement.closest('tr');
+    const vType = tr.querySelector('.emp-visit-type').value;
+    const hours = parseFloat(tr.querySelector('.emp-hours').value) || 0;
+    const rate = parseFloat(tr.querySelector('.emp-rate').value) || 0;
+
+    let cost = 0;
+    if (vType === 'NO_COST') {
+        cost = 0;
+    } else if (vType === 'FULL_DAY') {
+        cost = rate;
+    } else if (vType === 'HALF_DAY') {
+        cost = rate * 0.5;
+    } else if (vType === 'HOURLY') {
+        cost = hours * rate;
+    }
+
+    tr.querySelector('.emp-cost').value = formatINR(cost);
+    recalculateAll();
+}
+
+function addEmployeeRow() {
+    const tbody = document.getElementById('employeeBody');
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+        <td>
+            <select name="employee_id[]" class="form-select form-select-sm emp-select" onchange="onEmployeeSelect(this)">
+                <option value="">-- Choose Employee --</option>
+                {% for emp in employees %}
+                    <option value="{{ emp.id }}">{{ emp.name }} ({{ emp.employee_id }})</option>
+                {% endfor %}
+            </select>
+            <input type="text" name="employee_remarks[]" class="form-control form-control-sm mt-1 text-muted small" placeholder="Visit purpose">
+        </td>
+        <td>
+            <input type="text" class="form-control form-control-sm bg-light emp-desig" readonly placeholder="Auto-populated">
+        </td>
+        <td>
+            <select name="visit_type[]" class="form-select form-select-sm emp-visit-type" onchange="onVisitTypeChange(this)">
+                {% for vt, vt_lbl in visit_types %}
+                    <option value="{{ vt }}">{{ vt_lbl }}</option>
+                {% endfor %}
+            </select>
+        </td>
+        <td>
+            <input type="number" name="hours_spent[]" class="form-control form-control-sm text-end emp-hours" min="0" step="0.5" value="0.0" disabled oninput="recalcEmployeeRow(this)">
+        </td>
+        <td>
+            <input type="number" name="applied_rate[]" class="form-control form-control-sm text-end emp-rate" min="0" step="0.01" value="0.00" oninput="recalcEmployeeRow(this)">
+        </td>
+        <td>
+            <input type="text" class="form-control form-control-sm text-end emp-cost bg-light fw-bold" readonly value="₹ 0.00">
+        </td>
+        <td class="text-center">
+            <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2" onclick="removeRowConfirm(this)" title="Delete Row">
+                <i class="bi bi-trash"></i>
+            </button>
+        </td>
+    `;
+    tbody.appendChild(tr);
+    recalculateAll();
+}
+
+function addToolRow() {
+    const tbody = document.getElementById('toolsBody');
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+        <td>
+            <input type="text" name="tool_name[]" class="form-control form-control-sm" required placeholder="e.g. Cut-off Saw, Concrete Vibrator, Grinder">
+        </td>
+        <td>
+            <input type="number" name="tool_quantity[]" class="form-control form-control-sm text-end" min="1" step="1" value="1">
+        </td>
+        <td>
+            <input type="text" name="tool_used_by[]" class="form-control form-control-sm" placeholder="Operator / Staff name">
+        </td>
+        <td>
+            <input type="text" name="tool_remarks[]" class="form-control form-control-sm" placeholder="Usage / Task note">
+        </td>
+        <td class="text-center">
+            <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2" onclick="removeRowConfirm(this)" title="Delete Row">
+                <i class="bi bi-trash"></i>
+            </button>
+        </td>
+    `;
+    tbody.appendChild(tr);
+}
+
+// -------------------------------------------------------------
+// OVERALL TOTAL RECALCULATION ENGINE
+// -------------------------------------------------------------
+function recalculateAll() {
+    // 1. Manpower Totals
+    let mpCountTotal = 0;
+    let mpCostTotal = 0;
+    document.querySelectorAll('#manpowerBody tr').forEach(tr => {
+        const c = parseFloat(tr.querySelector('.mp-count')?.value) || 0;
+        const r = parseFloat(tr.querySelector('.mp-rate')?.value) || 0;
+        mpCountTotal += c;
+        mpCostTotal += (c * r);
+    });
+    document.getElementById('manpowerTotalCount').innerText = `${mpCountTotal} workers`;
+    document.getElementById('manpowerTotalCost').innerText = formatINR(mpCostTotal);
+    document.getElementById('bannerManpowerCost').innerText = formatINR(mpCostTotal);
+
+    // 2. Machinery Totals
+    let macCostTotal = 0;
+    document.querySelectorAll('#machineryBody tr').forEach(tr => {
+        const own = tr.querySelector('.mac-ownership')?.value;
+        const qty = parseFloat(tr.querySelector('.mac-qty')?.value) || 0;
+        const usage = parseFloat(tr.querySelector('.mac-usage')?.value) || 0;
+        const rate = parseFloat(tr.querySelector('.mac-rate')?.value) || 0;
+        if (own !== 'COMPANY_OWNED') {
+            macCostTotal += (qty * usage * rate);
+        }
+    });
+    document.getElementById('machineryTotalCost').innerText = formatINR(macCostTotal);
+    document.getElementById('bannerMachineryCost').innerText = formatINR(macCostTotal);
+
+    // 3. Employee Totals
+    let empCostTotal = 0;
+    document.querySelectorAll('#employeeBody tr').forEach(tr => {
+        const vt = tr.querySelector('.emp-visit-type')?.value;
+        const h = parseFloat(tr.querySelector('.emp-hours')?.value) || 0;
+        const r = parseFloat(tr.querySelector('.emp-rate')?.value) || 0;
+        if (vt === 'FULL_DAY') empCostTotal += r;
+        else if (vt === 'HALF_DAY') empCostTotal += (r * 0.5);
+        else if (vt === 'HOURLY') empCostTotal += (h * r);
+    });
+    const empSubtotalEl = document.getElementById('employeeTotalCost');
+    if (empSubtotalEl) empSubtotalEl.innerText = formatINR(empCostTotal);
+    const bannerEmpEl = document.getElementById('bannerEmployeeCost');
+    if (bannerEmpEl) bannerEmpEl.innerText = formatINR(empCostTotal);
+
+    // 4. Grand Total = Manpower Cost + Rental Machinery Cost + Employee Cost
+    const grandTotal = mpCostTotal + macCostTotal + empCostTotal;
+    document.getElementById('bannerGrandTotalCost').innerText = formatINR(grandTotal);
+}
+
+// -------------------------------------------------------------
+// DUPLICATE REPORT SERVER CHECK
+// -------------------------------------------------------------
+function checkDuplicateReport() {
+    const siteId = document.getElementById('siteSelect').value;
+    const dateVal = document.getElementById('reportDateInput').value;
+    const reportId = "{% if report %}{{ report.id }}{% endif %}";
+    const warnEl = document.getElementById('duplicateWarning');
+
+    if (!siteId || !dateVal) {
+        warnEl.classList.add('d-none');
+        return;
+    }
+
+    fetch(`/api/check-duplicate-report/?site_id=${siteId}&date=${dateVal}&exclude_id=${reportId}`)
+        .then(res => res.json())
+        .then(data => {
+            if (data.exists) {
+                warnEl.classList.remove('d-none');
+                warnEl.innerHTML = `
+                    <div class="alert alert-warning py-2 px-3 mt-2 mb-0 d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2">
+                        <span><i class="bi bi-info-circle-fill me-1"></i> A daily report (<strong>#REP-${data.report_id}</strong>) is already recorded for this site on ${dateVal} (Status: <strong>${data.status}</strong>).</span>
+                        <a href="/reports/${data.report_id}/edit/" class="btn btn-sm btn-dark text-warning text-nowrap"><i class="bi bi-pencil-square me-1"></i> Open & Edit Report #${data.report_id} &rarr;</a>
+                    </div>
+                `;
+            } else {
+                warnEl.classList.add('d-none');
+            }
+        });
+}
+
+function confirmSubmit() {
+    return confirm("Are you sure you want to officially SUBMIT this daily site report for approval?");
+}
+
+function validateBeforeSubmit(event) {
+    const siteSelect = document.getElementById('siteSelect');
+    if (!siteSelect.value) {
+        alert("Please select a construction site.");
+        siteSelect.focus();
+        return false;
+    }
+    const workDone = document.getElementById('workDoneTextarea');
+    if (!workDone.value.trim()) {
+        alert("Please enter the work done today.");
+        workDone.focus();
+        return false;
+    }
+    return true;
+}
+
+// Run initial calculation on page load
+document.addEventListener("DOMContentLoaded", function () {
+    recalculateAll();
+    checkDuplicateReport();
+});
+</script>
+{% endblock %}

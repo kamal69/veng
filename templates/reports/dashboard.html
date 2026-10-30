@@ -1,0 +1,445 @@
+{% extends 'base.html' %}
+{% load custom_filters %}
+
+{% block title %}Operations Dashboard - Vikas Engineering{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+    <div>
+        <h3 class="fw-bold text-dark mb-1">
+            <i class="bi bi-speedometer2 text-primary me-2"></i> Construction Site Operations & Cost Dashboard
+        </h3>
+        <p class="text-muted small mb-0">Real-time daily reporting, manpower tracking and cost allocation</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{% url 'reports_bulk_excel_export' %}?site_id={{ selected_site_id }}&date_from={{ start_date }}&date_to={{ end_date }}" class="btn btn-outline-success btn-sm d-flex align-items-center gap-1 shadow-sm">
+            <i class="bi bi-file-earmark-excel"></i> Export Excel
+        </a>
+        <a href="{% url 'report_create' %}" class="btn btn-primary btn-sm d-flex align-items-center gap-1 shadow-sm">
+            <i class="bi bi-plus-lg"></i> New Daily Report
+        </a>
+    </div>
+</div>
+
+<!-- FILTERS SECTION -->
+<div class="card mb-4 shadow-sm border-0">
+    <div class="card-body p-3">
+        <form method="get" action="{% url 'dashboard' %}" class="row g-2 align-items-center">
+            <div class="col-12 col-md-4">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-white"><i class="bi bi-buildings"></i> Site</span>
+                    <select name="site_id" class="form-select">
+                        <option value="">All Construction Sites</option>
+                        {% for s in sites %}
+                            <option value="{{ s.id }}" {% if selected_site_id == s.id|stringformat:"s" %}selected{% endif %}>
+                                {{ s.name }} ({{ s.code }})
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <div class="col-12 col-md-5">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-white"><i class="bi bi-calendar-range"></i> Range</span>
+                    <select name="date_filter" id="dateFilterSelect" class="form-select" onchange="toggleCustomDates(this.value)">
+                        <option value="today" {% if date_filter == 'today' %}selected{% endif %}>Today ({% now "d M" %})</option>
+                        <option value="week" {% if date_filter == 'week' %}selected{% endif %}>Last 7 Days</option>
+                        <option value="month" {% if date_filter == 'month' %}selected{% endif %}>Last 30 Days</option>
+                        <option value="custom" {% if date_filter == 'custom' %}selected{% endif %}>Custom Date Range</option>
+                    </select>
+                    <input type="date" name="start_date" id="startDateInput" value="{{ start_date }}" class="form-control {% if date_filter != 'custom' %}d-none{% endif %}">
+                    <input type="date" name="end_date" id="endDateInput" value="{{ end_date }}" class="form-control {% if date_filter != 'custom' %}d-none{% endif %}">
+                </div>
+            </div>
+
+            <div class="col-12 col-md-3 d-flex gap-2">
+                <button type="submit" class="btn btn-primary btn-sm flex-grow-1">
+                    <i class="bi bi-funnel"></i> Apply Filter
+                </button>
+                <a href="{% url 'dashboard' %}" class="btn btn-outline-secondary btn-sm" title="Reset Filters">
+                    <i class="bi bi-arrow-counterclockwise"></i>
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 4 TOP KPI CARDS -->
+<div class="row g-3 mb-4">
+    <!-- KPI 1: Active Sites -->
+    <div class="col-12 col-sm-6 col-xl-3">
+        <div class="card kpi-card h-100 border-start border-4 border-primary">
+            <div class="card-body p-3 d-flex align-items-center justify-content-between">
+                <div>
+                    <div class="text-muted small fw-semibold text-uppercase">Active Sites</div>
+                    <h3 class="fw-bold mb-0 text-dark">{{ active_sites_count }}</h3>
+                    <small class="text-success"><i class="bi bi-building-check"></i> Sites currently operational</small>
+                </div>
+                <div class="kpi-icon-box bg-primary bg-opacity-10 text-primary">
+                    <i class="bi bi-buildings"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- KPI 2: Today's Total Manpower -->
+    <div class="col-12 col-sm-6 col-xl-3">
+        <div class="card kpi-card h-100 border-start border-4 border-info">
+            <div class="card-body p-3 d-flex align-items-center justify-content-between">
+                <div>
+                    <div class="text-muted small fw-semibold text-uppercase">Today's Total Manpower</div>
+                    <h3 class="fw-bold mb-0 text-dark">{{ today_total_manpower }} <span class="fs-6 fw-normal text-muted">workers</span></h3>
+                    <small class="text-muted"><i class="bi bi-people"></i> Labours, Masons, Painters</small>
+                </div>
+                <div class="kpi-icon-box bg-info bg-opacity-10 text-info">
+                    <i class="bi bi-person-walking"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- KPI 3: Today's Total Site Cost -->
+    <div class="col-12 col-sm-6 col-xl-3">
+        <div class="card kpi-card h-100 border-start border-4 border-success">
+            <div class="card-body p-3 d-flex align-items-center justify-content-between">
+                <div>
+                    <div class="text-muted small fw-semibold text-uppercase">Today's Site Cost</div>
+                    <h3 class="fw-bold mb-0 text-dark currency-inr">{{ today_total_cost|inr_format }}</h3>
+                    <small class="text-muted"><i class="bi bi-cash-stack"></i> Manpower + Machinery + Visits</small>
+                </div>
+                <div class="kpi-icon-box bg-success bg-opacity-10 text-success">
+                    <i class="bi bi-currency-rupee"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- KPI 4: Pending Reports -->
+    <div class="col-12 col-sm-6 col-xl-3">
+        <div class="card kpi-card h-100 border-start border-4 border-warning">
+            <div class="card-body p-3 d-flex align-items-center justify-content-between">
+                <div>
+                    <div class="text-muted small fw-semibold text-uppercase">Pending Approval</div>
+                    <h3 class="fw-bold mb-0 text-dark">{{ pending_reports_count }}</h3>
+                    <small class="text-warning fw-semibold"><i class="bi bi-clock-history"></i> Awaiting review</small>
+                </div>
+                <div class="kpi-icon-box bg-warning bg-opacity-10 text-warning">
+                    <i class="bi bi-clipboard-check"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- CHARTS ROW -->
+<div class="row g-4 mb-4">
+    <!-- Chart 1: Site-wise Cost Comparison -->
+    <div class="col-12 col-lg-8">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-header bg-white d-flex align-items-center justify-content-between">
+                <span class="fw-bold text-dark"><i class="bi bi-bar-chart-line text-primary me-2"></i> Site-wise Cost Comparison</span>
+                <span class="badge bg-light text-muted border">Filtered Range</span>
+            </div>
+            <div class="card-body">
+                <canvas id="siteCostChart" height="230"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chart 2: Cost Breakdown (Donut) -->
+    <div class="col-12 col-lg-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-header bg-white d-flex align-items-center justify-content-between">
+                <span class="fw-bold text-dark"><i class="bi bi-pie-chart text-info me-2"></i> Cost Distribution</span>
+                <span class="badge bg-light text-muted border">Categories</span>
+            </div>
+            <div class="card-body d-flex flex-column align-items-center justify-content-center">
+                <div style="max-height: 220px; width: 100%;">
+                    <canvas id="costBreakdownChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- DAILY COST TREND ROW -->
+<div class="row g-4 mb-4">
+    <div class="col-12">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white d-flex align-items-center justify-content-between">
+                <span class="fw-bold text-dark"><i class="bi bi-graph-up-arrow text-success me-2"></i> Daily Cost Trend (Past 7 Days)</span>
+                <span class="badge bg-light text-muted border">₹ Total Daily Expenditure</span>
+            </div>
+            <div class="card-body">
+                <canvas id="dailyTrendChart" height="90"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- PENDING APPROVAL SECTION (If any pending) -->
+{% if pending_reports %}
+<div class="card shadow-sm border-0 mb-4 border-start border-4 border-warning">
+    <div class="card-header bg-white d-flex align-items-center justify-content-between py-3">
+        <h5 class="fw-bold mb-0 text-dark">
+            <i class="bi bi-exclamation-triangle-fill text-warning me-2"></i> Reports Awaiting Approval ({{ pending_reports|length }})
+        </h5>
+        <span class="badge bg-warning text-dark">Action Required</span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Site Name</th>
+                        <th>Reported By</th>
+                        <th class="text-end">Manpower</th>
+                        <th class="text-end">Total Site Cost</th>
+                        <th>Submitted At</th>
+                        <th class="text-center">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in pending_reports %}
+                    <tr>
+                        <td class="fw-medium">{{ r.report_date|date:"d M Y" }}</td>
+                        <td>
+                            <div><a href="{% url 'site_detail' r.site.id %}" class="fw-bold text-primary text-decoration-none"><i class="bi bi-buildings me-1"></i>{{ r.site.name }}</a></div>
+                            <small class="text-muted">{{ r.site.code }}</small>
+                        </td>
+                        <td>{{ r.reported_by_name }}</td>
+                        <td class="text-end">{{ r.total_manpower_count }} workers</td>
+                        <td class="text-end fw-bold currency-inr text-primary">{{ r.total_site_cost|inr_format }}</td>
+                        <td class="small text-muted">{{ r.submitted_at|date:"d M H:i" }}</td>
+                        <td class="text-center">
+                            <a href="{% url 'report_detail' r.id %}" class="btn btn-sm btn-outline-primary">
+                                Review & Approve <i class="bi bi-arrow-right"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- RECENT REPORTS TABLE -->
+<div class="card shadow-sm border-0">
+    <div class="card-header bg-white d-flex align-items-center justify-content-between py-3">
+        <h5 class="fw-bold mb-0 text-dark">
+            <i class="bi bi-clock-history text-primary me-2"></i> Recent Daily Site Reports
+        </h5>
+        <a href="{% url 'report_list' %}" class="btn btn-sm btn-outline-secondary">View All Reports &rarr;</a>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Date</th>
+                        <th>Site Name</th>
+                        <th>Status</th>
+                        <th>Site Status</th>
+                        <th>Reported By</th>
+                        <th class="text-end">Manpower Cost</th>
+                        <th class="text-end">Machinery Cost</th>
+                        <th class="text-end">Total Cost</th>
+                        <th class="text-center">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in recent_reports %}
+                    <tr>
+                        <td><span class="badge bg-light text-dark border">#{{ r.id }}</span></td>
+                        <td class="fw-semibold">{{ r.report_date|date:"d-M-Y" }}</td>
+                        <td>
+                            <a href="{% url 'site_detail' r.site.id %}" class="fw-bold text-primary text-decoration-none">
+                                <i class="bi bi-buildings me-1"></i>{{ r.site.name }}
+                            </a>
+                        </td>
+                        <td>
+                            <span class="badge {{ r.status|status_badge_class }}">
+                                {{ r.get_status_display }}
+                            </span>
+                        </td>
+                        <td>
+                            <span class="badge {{ r.site_status|status_badge_class }}">
+                                {{ r.get_site_status_display }}
+                            </span>
+                        </td>
+                        <td class="small">{{ r.reported_by_name }}</td>
+                        <td class="text-end small">{{ r.total_manpower_cost|inr_format }}</td>
+                        <td class="text-end small">{{ r.total_machinery_cost|inr_format }}</td>
+                        <td class="text-end fw-bold currency-inr text-dark">{{ r.total_site_cost|inr_format }}</td>
+                        <td class="text-center">
+                            <div class="btn-group btn-group-sm">
+                                <a href="{% url 'report_detail' r.id %}" class="btn btn-light" title="View Details">
+                                    <i class="bi bi-eye"></i>
+                                </a>
+                                <a href="{% url 'report_excel_export' r.id %}" class="btn btn-light text-success" title="Download Excel">
+                                    <i class="bi bi-file-earmark-excel"></i>
+                                </a>
+                                <a href="{% url 'report_print' r.id %}" target="_blank" class="btn btn-light text-secondary" title="Print Report">
+                                    <i class="bi bi-printer"></i>
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="10" class="text-center py-4 text-muted">
+                            <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+                            No reports found for the selected filter criteria.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function toggleCustomDates(val) {
+    const s = document.getElementById('startDateInput');
+    const e = document.getElementById('endDateInput');
+    if (val === 'custom') {
+        s.classList.remove('d-none');
+        e.classList.remove('d-none');
+    } else {
+        s.classList.add('d-none');
+        e.classList.add('d-none');
+    }
+}
+
+document.addEventListener("DOMContentLoaded", function () {
+    // 1. Site-wise Cost Bar Chart
+    const siteLabels = {{ site_chart_labels|safe }};
+    const siteValues = {{ site_chart_values|safe }};
+
+    if (siteLabels && siteLabels.length > 0) {
+        new Chart(document.getElementById('siteCostChart'), {
+            type: 'bar',
+            data: {
+                labels: siteLabels,
+                datasets: [{
+                    label: 'Total Cost (INR)',
+                    data: siteValues,
+                    backgroundColor: 'rgba(30, 58, 138, 0.85)',
+                    borderColor: '#1e3a8a',
+                    borderWidth: 1,
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function (ctx) {
+                                return 'Cost: ₹ ' + ctx.parsed.y.toLocaleString('en-IN', { minimumFractionDigits: 2 });
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function (val) {
+                                return '₹ ' + (val >= 1000 ? (val / 1000).toFixed(0) + 'k' : val);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // 2. Cost Distribution Doughnut Chart
+    const costComp = {{ cost_composition|safe }};
+    const hasData = costComp.some(v => v > 0);
+    new Chart(document.getElementById('costBreakdownChart'), {
+        type: 'doughnut',
+        data: {
+            labels: ['Manpower', 'Rental Machinery', 'Company Employee Visits'],
+            datasets: [{
+                data: hasData ? costComp : [1, 1, 1],
+                backgroundColor: hasData ? ['#3b82f6', '#f59e0b', '#10b981'] : ['#e2e8f0', '#e2e8f0', '#e2e8f0'],
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
+                tooltip: {
+                    callbacks: {
+                        label: function (ctx) {
+                            if (!hasData) return 'No expenditure recorded';
+                            return ctx.label + ': ₹ ' + ctx.parsed.toLocaleString('en-IN', { minimumFractionDigits: 2 });
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    // 3. Daily Trend Line Chart
+    const trendLabels = {{ trend_labels|safe }};
+    const trendValues = {{ trend_values|safe }};
+    new Chart(document.getElementById('dailyTrendChart'), {
+        type: 'line',
+        data: {
+            labels: trendLabels,
+            datasets: [{
+                label: 'Site Cost (INR)',
+                data: trendValues,
+                borderColor: '#10b981',
+                backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                borderWidth: 2.5,
+                fill: true,
+                tension: 0.35,
+                pointBackgroundColor: '#10b981',
+                pointRadius: 4,
+                pointHoverRadius: 6
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function (ctx) {
+                            return 'Expenditure: ₹ ' + ctx.parsed.y.toLocaleString('en-IN', { minimumFractionDigits: 2 });
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function (val) {
+                            return '₹ ' + (val >= 1000 ? (val / 1000).toFixed(0) + 'k' : val);
+                        }
+                    }
+                }
+            }
+        }
+    });
+});
+</script>
+{% endblock %}

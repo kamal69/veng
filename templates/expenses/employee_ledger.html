@@ -1,0 +1,498 @@
+{% extends "base.html" %}
+{% load humanize %}
+
+{% block title %}{{ employee.name }}'s Cash Ledger | Vikas Engineering{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-2">
+    <!-- Header Banner -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body p-4">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="avatar-circle bg-primary text-white fw-bold fs-3 rounded-circle d-flex align-items-center justify-content-center shadow-sm" style="width: 58px; height: 58px;">
+                        {{ employee.name|slice:":1" }}
+                    </div>
+                    <div>
+                        <div class="d-flex align-items-center gap-2">
+                            <h3 class="fw-bold mb-0 text-dark">{{ employee.name }}</h3>
+                            {% if current_balance < 0 %}
+                                <span class="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25 px-2 py-1">
+                                    <i class="bi bi-exclamation-circle-fill me-1"></i>Advance Debit
+                                </span>
+                            {% else %}
+                                <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 px-2 py-1">
+                                    <i class="bi bi-check-circle-fill me-1"></i>Cash In Hand
+                                </span>
+                            {% endif %}
+                        </div>
+                        <p class="text-muted small mb-0">{{ employee.designation|default:"Operations Staff" }} | Financial Period: FY 2026-27</p>
+                    </div>
+                </div>
+
+                <div class="text-md-end">
+                    <span class="text-muted small text-uppercase fw-semibold d-block">Current Available Balance</span>
+                    <span class="display-6 fw-bold {% if current_balance < 0 %}text-danger{% else %}text-success{% endif %}">
+                        ₹{{ current_balance|floatformat:2|intcomma }}
+                    </span>
+                </div>
+            </div>
+
+            <!-- Financial Summary Strips -->
+            <div class="row g-2 mt-3 pt-3 border-top">
+                <div class="col-6 col-md-3">
+                    <div class="p-2 border rounded bg-light">
+                        <span class="text-muted extra-small d-block">Opening Balance</span>
+                        <span class="fw-semibold text-dark">₹{{ opening_balance|floatformat:2|intcomma }}</span>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="p-2 border rounded bg-light">
+                        <span class="text-muted extra-small d-block">Total Cash In</span>
+                        <span class="fw-semibold text-success">+₹{{ total_in|floatformat:2|intcomma }}</span>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="p-2 border rounded bg-light">
+                        <span class="text-muted extra-small d-block">Total Site Expenses</span>
+                        <span class="fw-semibold text-danger">-₹{{ total_exp|floatformat:2|intcomma }}</span>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="p-2 border rounded bg-light">
+                        <span class="text-muted extra-small d-block">Total Cash Out</span>
+                        <span class="fw-semibold text-warning">-₹{{ total_out|floatformat:2|intcomma }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Action Toolbars -->
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3 no-print">
+        <!-- Add Buttons -->
+        <div class="d-flex flex-wrap gap-2">
+            <button type="button" class="btn btn-success btn-sm d-flex align-items-center gap-1 shadow-sm" data-bs-toggle="modal" data-bs-target="#cashInModal">
+                <i class="bi bi-plus-circle"></i> + Add Cash In
+            </button>
+            <button type="button" class="btn btn-danger btn-sm d-flex align-items-center gap-1 shadow-sm" data-bs-toggle="modal" data-bs-target="#expenseModal">
+                <i class="bi bi-cart-plus"></i> + Add Expense
+            </button>
+            <button type="button" class="btn btn-warning btn-sm d-flex align-items-center gap-1 shadow-sm text-dark" data-bs-toggle="modal" data-bs-target="#cashOutModal">
+                <i class="bi bi-box-arrow-up-right"></i> + Add Cash Out
+            </button>
+            <button type="button" class="btn btn-info btn-sm d-flex align-items-center gap-1 shadow-sm text-dark" data-bs-toggle="modal" data-bs-target="#transferModal">
+                <i class="bi bi-arrow-left-right"></i> Transfer to Staff
+            </button>
+        </div>
+
+        <!-- Export & Print -->
+        <div class="d-flex gap-2">
+            <a href="{% url 'expenses:export_ledger_excel' employee.id %}" class="btn btn-outline-success btn-sm d-flex align-items-center gap-1">
+                <i class="bi bi-file-earmark-excel"></i> Export Excel
+            </a>
+            <button onclick="window.print()" class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1">
+                <i class="bi bi-printer"></i> Print
+            </button>
+        </div>
+    </div>
+
+    <!-- Search & Filter Card -->
+    <div class="card border-0 shadow-sm mb-3 no-print">
+        <div class="card-body p-3">
+            <form method="get" class="row g-2 align-items-center">
+                <div class="col-md-3">
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text bg-light"><i class="bi bi-search"></i></span>
+                        <input type="text" name="q" class="form-control" placeholder="Search particulars, site, voucher..." value="{{ q }}">
+                    </div>
+                </div>
+                <div class="col-md-2 col-6">
+                    <input type="date" name="start_date" class="form-control form-control-sm" value="{{ start_date }}" placeholder="From date">
+                </div>
+                <div class="col-md-2 col-6">
+                    <input type="date" name="end_date" class="form-control form-control-sm" value="{{ end_date }}" placeholder="To date">
+                </div>
+                <div class="col-md-2">
+                    <select name="txn_type" class="form-select form-select-sm">
+                        <option value="">All Entry Types</option>
+                        <option value="CASH_IN" {% if txn_type_filter == 'CASH_IN' %}selected{% endif %}>Cash In</option>
+                        <option value="EXPENSE" {% if txn_type_filter == 'EXPENSE' %}selected{% endif %}>Site Expense</option>
+                        <option value="CASH_OUT" {% if txn_type_filter == 'CASH_OUT' %}selected{% endif %}>Cash Out</option>
+                        <option value="TRANSFER_IN" {% if txn_type_filter == 'TRANSFER_IN' %}selected{% endif %}>Transfer In</option>
+                        <option value="TRANSFER_OUT" {% if txn_type_filter == 'TRANSFER_OUT' %}selected{% endif %}>Transfer Out</option>
+                    </select>
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-primary btn-sm px-3">Filter</button>
+                    {% if q or start_date or end_date or txn_type_filter %}
+                        <a href="{% url 'expenses:employee_ledger' employee.id %}" class="btn btn-outline-secondary btn-sm ms-1">Reset</a>
+                    {% endif %}
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Transaction Ledger Table -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0" style="font-size: 0.88rem;">
+                    <thead class="table-light text-uppercase extra-small text-muted sticky-top">
+                        <tr>
+                            <th class="ps-3" style="width: 105px;">Date</th>
+                            <th style="min-width: 140px;">Cash In</th>
+                            <th style="min-width: 160px;">Site Allocated</th>
+                            <th style="min-width: 130px;">Category</th>
+                            <th style="min-width: 220px;">Particulars / Description</th>
+                            <th class="text-center" style="width: 90px;">Vou. No</th>
+                            <th class="text-end" style="min-width: 110px;">Expense (₹)</th>
+                            <th style="min-width: 140px;">Cash Out</th>
+                            <th class="text-end pe-3 bg-light bg-opacity-75" style="min-width: 130px;">Running Bal (₹)</th>
+                            <th class="text-center no-print" style="width: 50px;">Act</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Opening balance row marker -->
+                        <tr class="table-secondary bg-opacity-25 fw-semibold">
+                            <td class="ps-3 text-muted">01-04-2026</td>
+                            <td colspan="7" class="text-uppercase small text-muted">
+                                <i class="bi bi-flag-fill me-1"></i>Opening Balance for FY 2026-27
+                            </td>
+                            <td class="text-end pe-3 fw-bold {% if opening_balance < 0 %}text-danger{% else %}text-success{% endif %}">
+                                ₹{{ opening_balance|floatformat:2|intcomma }}
+                            </td>
+                            <td class="no-print"></td>
+                        </tr>
+
+                        {% for txn in page_obj %}
+                        <tr>
+                            <!-- Date -->
+                            <td class="ps-3 text-muted text-nowrap">{{ txn.transaction_date|date:"d-m-Y" }}</td>
+
+                            <!-- Cash In -->
+                            <td>
+                                {% if txn.txn_type == 'CASH_IN' or txn.txn_type == 'TRANSFER_IN' %}
+                                    <div class="text-success fw-bold">+₹{{ txn.amount|floatformat:2|intcomma }}</div>
+                                    <div class="extra-small text-muted text-truncate" style="max-width: 150px;">
+                                        {{ txn.cash_in_source|default:"Cash In" }}
+                                    </div>
+                                {% else %}
+                                    <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+
+                            <!-- Site -->
+                            <td>
+                                {% if txn.site %}
+                                    <span class="badge bg-light text-dark border text-wrap text-start">
+                                        <i class="bi bi-geo-alt text-danger me-1"></i>{{ txn.site.name }}
+                                    </span>
+                                {% else %}
+                                    <span class="text-muted extra-small">-</span>
+                                {% endif %}
+                            </td>
+
+                            <!-- Category -->
+                            <td>
+                                {% if txn.category %}
+                                    <span class="badge bg-info bg-opacity-10 text-dark border border-info border-opacity-25 text-wrap text-start">
+                                        {{ txn.category.name }}
+                                    </span>
+                                {% else %}
+                                    <span class="text-muted extra-small">-</span>
+                                {% endif %}
+                            </td>
+
+                            <!-- Particulars -->
+                            <td>
+                                <div class="text-wrap" style="max-width: 280px;">
+                                    {{ txn.particulars|default:"-" }}
+                                </div>
+                            </td>
+
+                            <!-- Voucher No -->
+                            <td class="text-center">
+                                {% if txn.voucher_no %}
+                                    <span class="badge bg-secondary bg-opacity-10 text-dark font-monospace">{{ txn.voucher_no }}</span>
+                                {% else %}
+                                    <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+
+                            <!-- Expense Amount -->
+                            <td class="text-end">
+                                {% if txn.txn_type == 'EXPENSE' %}
+                                    <span class="text-danger fw-bold">-₹{{ txn.amount|floatformat:2|intcomma }}</span>
+                                {% else %}
+                                    <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+
+                            <!-- Cash Out -->
+                            <td>
+                                {% if txn.txn_type == 'CASH_OUT' or txn.txn_type == 'TRANSFER_OUT' %}
+                                    <div class="text-warning text-dark fw-bold">-₹{{ txn.amount|floatformat:2|intcomma }}</div>
+                                    <div class="extra-small text-muted text-truncate" style="max-width: 150px;">
+                                        {{ txn.cash_out_recipient|default:"Cash Out" }}
+                                    </div>
+                                {% else %}
+                                    <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+
+                            <!-- Running Balance -->
+                            <td class="text-end pe-3 bg-light bg-opacity-75 font-monospace fw-bold {% if txn.running_balance < 0 %}text-danger{% else %}text-success{% endif %}">
+                                ₹{{ txn.running_balance|floatformat:2|intcomma }}
+                            </td>
+
+                            <!-- Actions -->
+                            <td class="text-center no-print">
+                                <form method="post" action="{% url 'expenses:delete_transaction' txn.id %}" onsubmit="return confirm('Are you sure you want to delete this entry? Running balance will be recalculated automatically.');">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-outline-danger btn-sm p-1 border-0" title="Delete Entry">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="10" class="text-center py-5 text-muted">
+                                <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+                                No transactions found for this employee matching your filter.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            {% if page_obj.has_other_pages %}
+            <div class="p-3 border-top d-flex justify-content-between align-items-center no-print">
+                <span class="small text-muted">
+                    Showing {{ page_obj.start_index }} to {{ page_obj.end_index }} of {{ page_obj.paginator.count }} transactions
+                </span>
+                <nav>
+                    <ul class="pagination pagination-sm mb-0">
+                        {% if page_obj.has_previous %}
+                            <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if q %}&q={{ q }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}">Previous</a></li>
+                        {% endif %}
+                        <li class="page-item active"><span class="page-link">{{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span></li>
+                        {% if page_obj.has_next %}
+                            <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}{% if q %}&q={{ q }}{% endif %}{% if start_date %}&start_date={{ start_date }}{% endif %}{% if end_date %}&end_date={{ end_date }}{% endif %}">Next</a></li>
+                        {% endif %}
+                    </ul>
+                </nav>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- ================= MODALS FOR QUICK ACTIONS ================= -->
+
+<!-- 1. Cash In Modal -->
+<div class="modal fade" id="cashInModal" tabindex="-1" aria-labelledby="cashInModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content border-0 shadow">
+            <form method="post" action="{% url 'expenses:add_cash_in' employee.id %}">
+                {% csrf_token %}
+                <div class="modal-header bg-success text-white py-3">
+                    <h5 class="modal-title fw-bold" id="cashInModalLabel"><i class="bi bi-plus-circle me-2"></i>Record Cash In: {{ employee.name }}</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Transaction Date <span class="text-danger">*</span></label>
+                        <input type="date" name="transaction_date" class="form-control" value="{% now 'Y-m-d' %}" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Amount (₹) <span class="text-danger">*</span></label>
+                        <input type="number" step="0.01" name="amount" class="form-control form-control-lg fw-bold text-success" placeholder="0.00" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Source of Cash / Received From <span class="text-danger">*</span></label>
+                        <input type="text" name="cash_in_source" class="form-control" placeholder="e.g. VEW ATM, Bipin Kumar, Bank Withdrawal" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Remarks (Optional)</label>
+                        <textarea name="remarks" class="form-control" rows="2" placeholder="Cheque number, slip, or note..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success btn-sm px-4">Save Cash In</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 2. Expense Modal -->
+<div class="modal fade" id="expenseModal" tabindex="-1" aria-labelledby="expenseModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content border-0 shadow">
+            <form method="post" action="{% url 'expenses:add_expense' employee.id %}">
+                {% csrf_token %}
+                <div class="modal-header bg-danger text-white py-3">
+                    <h5 class="modal-title fw-bold" id="expenseModalLabel"><i class="bi bi-cart-plus me-2"></i>Record Site Expense: {{ employee.name }}</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Transaction Date <span class="text-danger">*</span></label>
+                            <input type="date" name="transaction_date" class="form-control" value="{% now 'Y-m-d' %}" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Expense Amount (₹) <span class="text-danger">*</span></label>
+                            <input type="number" step="0.01" name="amount" class="form-control fw-bold text-danger" placeholder="0.00" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Site Allocated</label>
+                            <select name="site" class="form-select">
+                                <option value="">-- General / Head Office --</option>
+                                {% for s in sites %}
+                                    <option value="{{ s.id }}">{{ s.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Expense Category</label>
+                            <select name="category" class="form-select">
+                                <option value="">-- Select Category --</option>
+                                {% for c in categories %}
+                                    <option value="{{ c.id }}">{{ c.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label small fw-semibold">Particulars / Work Details <span class="text-danger">*</span></label>
+                            <textarea name="particulars" class="form-control" rows="2" placeholder="Detailed description of what was purchased or paid for..." required></textarea>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Voucher / Bill No</label>
+                            <input type="text" name="voucher_no" class="form-control" placeholder="Optional voucher/receipt number">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Remarks</label>
+                            <input type="text" name="remarks" class="form-control" placeholder="Additional notes...">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger btn-sm px-4">Save Expense</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 3. Cash Out Modal -->
+<div class="modal fade" id="cashOutModal" tabindex="-1" aria-labelledby="cashOutModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content border-0 shadow">
+            <form method="post" action="{% url 'expenses:add_cash_out' employee.id %}">
+                {% csrf_token %}
+                <div class="modal-header bg-warning text-dark py-3">
+                    <h5 class="modal-title fw-bold" id="cashOutModalLabel"><i class="bi bi-box-arrow-up-right me-2"></i>Record Cash Out (External): {{ employee.name }}</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Transaction Date <span class="text-danger">*</span></label>
+                        <input type="date" name="transaction_date" class="form-control" value="{% now 'Y-m-d' %}" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Cash Out Amount (₹) <span class="text-danger">*</span></label>
+                        <input type="number" step="0.01" name="amount" class="form-control fw-bold text-warning text-dark" placeholder="0.00" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Paid To / Recipient Name <span class="text-danger">*</span></label>
+                        <input type="text" name="cash_out_recipient" class="form-control" placeholder="Vendor, sub-contractor, or person..." required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Purpose / Particulars</label>
+                        <input type="text" name="particulars" class="form-control" placeholder="Reason for cash payment...">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Remarks (Optional)</label>
+                        <textarea name="remarks" class="form-control" rows="2" placeholder="Additional details..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-warning btn-sm px-4 text-dark">Save Cash Out</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- 4. Inter-Employee Transfer Modal -->
+<div class="modal fade" id="transferModal" tabindex="-1" aria-labelledby="transferModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content border-0 shadow">
+            <form method="post" action="{% url 'expenses:add_transfer' %}">
+                {% csrf_token %}
+                <input type="hidden" name="sender_id" value="{{ employee.id }}">
+                <input type="hidden" name="next_url" value="{% url 'expenses:employee_ledger' employee.id %}">
+                <div class="modal-header bg-info text-dark py-3">
+                    <h5 class="modal-title fw-bold" id="transferModalLabel"><i class="bi bi-arrow-left-right me-2"></i>Transfer Cash to Another Staff</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <div class="alert alert-info py-2 small mb-3">
+                        <i class="bi bi-info-circle me-1"></i>
+                        This automatically creates a <strong>Debit</strong> in {{ employee.name }}'s ledger and a <strong>Credit</strong> in the receiver's ledger without duplicating company expenses.
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">From (Sender)</label>
+                        <input type="text" class="form-control bg-light" value="{{ employee.name }}" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Transfer To (Receiver) <span class="text-danger">*</span></label>
+                        <select name="receiver_id" class="form-select" required>
+                            <option value="">-- Select Staff Member --</option>
+                            {% for other in other_employees %}
+                                <option value="{{ other.id }}">{{ other.name }} (Available: ₹{{ other.cached_balance|floatformat:2|intcomma }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Transfer Amount (₹) <span class="text-danger">*</span></label>
+                        <input type="number" step="0.01" name="amount" class="form-control form-control-lg fw-bold text-info text-dark" placeholder="0.00" required>
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Date</label>
+                            <input type="date" name="transfer_date" class="form-control" value="{% now 'Y-m-d' %}">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Mode</label>
+                            <select name="payment_mode" class="form-select">
+                                <option value="Paytm" selected>Paytm</option>
+                                <option value="Cash">Cash</option>
+                                <option value="ATM">ATM Withdrawal</option>
+                                <option value="Bank Transfer">Bank Transfer</option>
+                                <option value="UPI">UPI</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Reference / UTR / Remarks</label>
+                        <input type="text" name="reference_no" class="form-control" placeholder="Transaction ref or note...">
+                    </div>
+                </div>
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-info btn-sm px-4 text-dark">Confirm Transfer</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,100 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Sign In - Vikas Engineering{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center align-items-center min-vh-75 py-5">
+    <div class="col-12 col-md-8 col-lg-5">
+        <div class="card shadow-lg border-0">
+            <div class="card-header bg-primary text-white text-center py-4 rounded-top">
+                <div class="d-inline-flex p-3 rounded-circle bg-white bg-opacity-25 mb-2">
+                    <i class="bi bi-cone-striped fs-1 text-warning"></i>
+                </div>
+                <h3 class="fw-bold mb-1">VIKAS ENGINEERING</h3>
+                <p class="text-white-50 mb-0 small">Daily Site Report & Cost Management System</p>
+            </div>
+            <div class="card-body p-4 p-md-5">
+                <h5 class="fw-semibold text-secondary mb-4 text-center">Sign in to your account</h5>
+
+                <form method="post" action="{% url 'login' %}">
+                    {% csrf_token %}
+                    
+                    <div class="mb-3">
+                        <label for="id_username" class="form-label fw-medium">Username</label>
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="bi bi-person"></i></span>
+                            <input type="text" name="username" id="id_username" class="form-control" placeholder="Enter username" required autofocus>
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="id_password" class="form-label fw-medium">Password</label>
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="bi bi-lock"></i></span>
+                            <input type="password" name="password" id="id_password" class="form-control" placeholder="Enter password" required>
+                        </div>
+                    </div>
+
+                    <div class="d-grid mb-4">
+                        <button type="submit" class="btn btn-primary btn-lg shadow-sm">
+                            <i class="bi bi-box-arrow-in-right me-1"></i> Sign In
+                        </button>
+                    </div>
+                </form>
+
+                <!-- Demo Credentials Helper Card -->
+                <div class="card bg-light border-dashed mt-4">
+                    <div class="card-body p-3">
+                        <div class="d-flex align-items-center gap-1 mb-2 text-primary fw-semibold small">
+                            <i class="bi bi-info-circle-fill"></i> Quick Demo Access Credentials:
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-borderless mb-0 small">
+                                <thead>
+                                    <tr class="text-muted border-bottom">
+                                        <th>Role</th>
+                                        <th>Username</th>
+                                        <th>Password</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><span class="badge bg-danger">Admin</span></td>
+                                        <td><code>admin</code></td>
+                                        <td><code>admin123</code></td>
+                                        <td><button type="button" class="btn btn-xs btn-outline-secondary py-0 px-1" onclick="fillCreds('admin', 'admin123')">Fill</button></td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="badge bg-info text-dark">Site Engineer</span></td>
+                                        <td><code>engineer</code></td>
+                                        <td><code>engineer123</code></td>
+                                        <td><button type="button" class="btn btn-xs btn-outline-secondary py-0 px-1" onclick="fillCreds('engineer', 'engineer123')">Fill</button></td>
+                                    </tr>
+                                    <tr>
+                                        <td><span class="badge bg-primary">Management</span></td>
+                                        <td><code>manager</code></td>
+                                        <td><code>manager123</code></td>
+                                        <td><button type="button" class="btn btn-xs btn-outline-secondary py-0 px-1" onclick="fillCreds('manager', 'manager123')">Fill</button></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function fillCreds(u, p) {
+    document.getElementById('id_username').value = u;
+    document.getElementById('id_password').value = p;
+}
+</script>
+{% endblock %}

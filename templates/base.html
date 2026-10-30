@@ -1,0 +1,204 @@
+{% load static custom_filters %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Daily Site Report & Cost Management{% endblock %} - Vikas Engineering</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{% static 'css/custom.css' %}">
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <div class="container-fluid p-0">
+        <div class="row g-0">
+            {% if user.is_authenticated %}
+            <!-- SIDEBAR -->
+            <aside class="col-12 col-md-3 col-lg-2 sidebar d-md-block collapse no-print" id="sidebarMenu">
+                <div class="d-flex flex-column h-100">
+                    <a href="{% url 'dashboard' %}" class="sidebar-brand text-decoration-none d-flex align-items-center gap-2">
+                        <i class="bi bi-cone-striped fs-3 text-warning"></i>
+                        <div>
+                            <div class="lh-1 text-white fw-bold">VIKAS ENG</div>
+                            <small class="text-secondary" style="font-size: 0.7rem;">Site & Cost Management</small>
+                        </div>
+                    </a>
+
+                    <!-- User Pill in Sidebar -->
+                    <div class="p-3 mx-2 my-2 rounded bg-dark border border-secondary border-opacity-25 text-white">
+                        <div class="d-flex align-items-center gap-2">
+                            <i class="bi bi-person-circle fs-3 text-info"></i>
+                            <div class="overflow-hidden">
+                                <div class="fw-semibold text-truncate">{{ user.get_full_name|default:user.username }}</div>
+                                <span class="badge {{ current_role|role_badge_class }} text-uppercase" style="font-size: 0.65rem;">
+                                    {{ user_profile.get_role_display|default:current_role }}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Navigation Links -->
+                    <ul class="nav flex-column mb-auto">
+                        <li class="sidebar-section-title">Operations</li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}" href="{% url 'dashboard' %}">
+                                <i class="bi bi-speedometer2"></i> Dashboard
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.resolver_match.url_name == 'site_list' or request.resolver_match.url_name == 'site_detail' %}active{% endif %}" href="{% url 'site_list' %}">
+                                <i class="bi bi-buildings text-warning"></i> Construction Sites
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.resolver_match.url_name == 'report_list' %}active{% endif %}" href="{% url 'report_list' %}">
+                                <i class="bi bi-file-earmark-spreadsheet"></i> Daily Site Reports
+                                {% if pending_reports_count > 0 %}
+                                    <span class="badge bg-warning text-dark ms-auto">{{ pending_reports_count }}</span>
+                                {% endif %}
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.resolver_match.url_name == 'report_create' %}active{% endif %}" href="{% url 'report_create' %}">
+                                <i class="bi bi-plus-circle-dotted text-warning"></i> + New Site Report
+                            </a>
+                        </li>
+
+                        <!-- EMPLOYEE CASH & EXPENSE SYSTEM -->
+                        <li class="sidebar-section-title">Cash & Expenses (Accounting)</li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.resolver_match.app_name == 'expenses' and request.resolver_match.url_name == 'dashboard' %}active{% endif %}" href="{% url 'expenses:dashboard' %}">
+                                <i class="bi bi-wallet2 text-success"></i> Cash Dashboard
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.resolver_match.app_name == 'expenses' and 'ledger' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'expenses:ledger_list' %}">
+                                <i class="bi bi-journal-bookmark text-info"></i> Employee Ledgers
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.resolver_match.app_name == 'expenses' and request.resolver_match.url_name == 'transfers_list' %}active{% endif %}" href="{% url 'expenses:transfers_list' %}">
+                                <i class="bi bi-arrow-left-right text-warning"></i> Internal Transfers
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.resolver_match.app_name == 'expenses' and request.resolver_match.url_name == 'site_reports' %}active{% endif %}" href="{% url 'expenses:site_reports' %}">
+                                <i class="bi bi-geo-alt text-danger"></i> Site-Wise Expenses
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.resolver_match.app_name == 'expenses' and request.resolver_match.url_name == 'category_reports' %}active{% endif %}" href="{% url 'expenses:category_reports' %}">
+                                <i class="bi bi-tags text-primary"></i> Category Reports
+                            </a>
+                        </li>
+
+                        {% if is_admin %}
+                        <li class="sidebar-section-title">Master Data (Admin)</li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if 'site' in request.resolver_match.url_name and 'report' not in request.resolver_match.url_name %}active{% endif %}" href="{% url 'site_list' %}">
+                                <i class="bi bi-buildings"></i> Sites Directory
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if 'employee' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'employee_list' %}">
+                                <i class="bi bi-people"></i> Employees & Rates
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if 'user' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'user_list' %}">
+                                <i class="bi bi-shield-lock"></i> Users & Roles
+                            </a>
+                        </li>
+                        {% endif %}
+
+                        <li class="sidebar-section-title">Account</li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.resolver_match.url_name == 'profile' %}active{% endif %}" href="{% url 'profile' %}">
+                                <i class="bi bi-person-gear"></i> My Profile
+                            </a>
+                        </li>
+                    </ul>
+
+                    <!-- Sidebar Footer -->
+                    <div class="p-3 border-top border-secondary border-opacity-25">
+                        <a href="{% url 'logout' %}" class="btn btn-outline-danger btn-sm w-100 d-flex align-items-center justify-content-center gap-2">
+                            <i class="bi bi-box-arrow-right"></i> Sign Out
+                        </a>
+                    </div>
+                </div>
+            </aside>
+            {% endif %}
+
+            <!-- MAIN CONTENT AREA -->
+            <main class="{% if user.is_authenticated %}col-12 col-md-9 col-lg-10{% else %}col-12{% endif %} ms-auto p-0 min-vh-100 d-flex flex-column">
+                {% if user.is_authenticated %}
+                <!-- TOP NAVBAR -->
+                <nav class="navbar navbar-expand-lg top-navbar px-4 py-2 sticky-top no-print">
+                    <div class="container-fluid p-0">
+                        <button class="btn btn-sm btn-outline-secondary d-md-none me-2" type="button" data-bs-toggle="collapse" data-bs-target="#sidebarMenu">
+                            <i class="bi bi-list fs-5"></i>
+                        </button>
+                        
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="text-muted small">Timezone: Asia/Kolkata (IST)</span>
+                            <span class="badge bg-light text-dark border">
+                                <i class="bi bi-calendar3 me-1"></i> {% now "d M Y" %}
+                            </span>
+                        </div>
+
+                        <div class="d-flex align-items-center gap-3 ms-auto">
+                            <a href="{% url 'report_create' %}" class="btn btn-primary btn-sm d-flex align-items-center gap-1 shadow-sm">
+                                <i class="bi bi-plus-lg"></i> <span class="d-none d-sm-inline">Add Daily Report</span>
+                            </a>
+                        </div>
+                    </div>
+                </nav>
+                {% endif %}
+
+                <!-- FLASH MESSAGES -->
+                <div class="px-4 pt-3 no-print">
+                    {% if messages %}
+                        {% for message in messages %}
+                            <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show shadow-sm" role="alert">
+                                {% if message.tags == 'success' %}
+                                    <i class="bi bi-check-circle-fill me-2 text-success"></i>
+                                {% elif message.tags == 'error' or message.tags == 'danger' %}
+                                    <i class="bi bi-exclamation-triangle-fill me-2 text-danger"></i>
+                                {% elif message.tags == 'warning' %}
+                                    <i class="bi bi-exclamation-circle-fill me-2 text-warning"></i>
+                                {% else %}
+                                    <i class="bi bi-info-circle-fill me-2 text-info"></i>
+                                {% endif %}
+                                {{ message }}
+                                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                </div>
+
+                <!-- PAGE CONTENT -->
+                <div class="p-4 flex-grow-1">
+                    {% block content %}{% endblock %}
+                </div>
+
+                <!-- FOOTER -->
+                <footer class="mt-auto py-3 px-4 bg-white border-top text-center text-muted small no-print">
+                    <div>
+                        <span>&copy; {% now "Y" %} Vikas Engineering Works. All rights reserved.</span>
+                    </div>
+                </footer>
+            </main>
+        </div>
+    </div>
+
+    <!-- Bootstrap 5 JS Bundle -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>

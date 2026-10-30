@@ -1,0 +1,185 @@
+{% extends 'base.html' %}
+{% load custom_filters %}
+
+{% block title %}Daily Site Reports - Vikas Engineering{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+    <div>
+        <h3 class="fw-bold text-dark mb-1">
+            <i class="bi bi-file-earmark-spreadsheet text-primary me-2"></i> Daily Site Reports
+        </h3>
+        <p class="text-muted small mb-0">Browse, filter and export all submitted and approved construction site reports.</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{% url 'reports_bulk_excel_export' %}?site_id={{ selected_site }}&status={{ selected_status }}&date_from={{ date_from }}&date_to={{ date_to }}" class="btn btn-outline-success btn-sm shadow-sm">
+            <i class="bi bi-file-earmark-excel"></i> Export Filtered to Excel
+        </a>
+        <a href="{% url 'report_create' %}" class="btn btn-primary btn-sm shadow-sm">
+            <i class="bi bi-plus-lg"></i> + Create Report
+        </a>
+    </div>
+</div>
+
+<!-- FILTER CARD -->
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-body p-3">
+        <form method="get" action="{% url 'report_list' %}" class="row g-2 align-items-center">
+            <div class="col-12 col-md-3">
+                <input type="text" name="q" value="{{ search_query }}" class="form-control form-control-sm" placeholder="Search work done, engineer, site...">
+            </div>
+
+            <div class="col-12 col-md-3">
+                <select name="site_id" class="form-select form-select-sm">
+                    <option value="">All Construction Sites</option>
+                    {% for s in sites %}
+                        <option value="{{ s.id }}" {% if selected_site == s.id|stringformat:"s" %}selected{% endif %}>
+                            {{ s.name }} ({{ s.code }})
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-12 col-md-2">
+                <select name="status" class="form-select form-select-sm">
+                    <option value="">All Statuses</option>
+                    {% for code, label in statuses %}
+                        <option value="{{ code }}" {% if selected_status == code %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-12 col-md-2">
+                <input type="date" name="date_from" value="{{ date_from }}" class="form-control form-control-sm" title="From Date">
+            </div>
+
+            <div class="col-12 col-md-2">
+                <input type="date" name="date_to" value="{{ date_to }}" class="form-control form-control-sm" title="To Date">
+            </div>
+
+            <div class="col-12 d-flex justify-content-end gap-2 mt-2">
+                <button type="submit" class="btn btn-primary btn-sm">
+                    <i class="bi bi-funnel"></i> Apply Filter
+                </button>
+                <a href="{% url 'report_list' %}" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-arrow-counterclockwise"></i> Reset
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- FILTER SUMMARY METRICS -->
+<div class="d-flex flex-wrap gap-3 align-items-center mb-3 text-muted small">
+    <div>Found <strong>{{ page_obj.paginator.count }}</strong> reports</div>
+    <div>&bull; Total Manpower: <strong>{{ filtered_total_workers }}</strong> workers</div>
+    <div>&bull; Total Expenditure: <strong class="text-primary currency-inr">{{ filtered_total_cost|inr_format }}</strong></div>
+</div>
+
+<!-- REPORTS TABLE -->
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width: 8%;">Report ID</th>
+                        <th style="width: 12%;">Date</th>
+                        <th style="width: 22%;">Site Details</th>
+                        <th style="width: 12%;">Status</th>
+                        <th style="width: 15%;">Reported By</th>
+                        <th style="width: 10%;" class="text-end">Manpower</th>
+                        <th style="width: 11%;" class="text-end">Total Site Cost</th>
+                        <th style="width: 10%;" class="text-center">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in page_obj %}
+                    <tr>
+                        <td class="fw-semibold">
+                            <a href="{% url 'report_detail' r.id %}" class="text-decoration-none">
+                                #REP-{{ r.id|stringformat:"04d" }}
+                            </a>
+                        </td>
+                        <td class="fw-medium">{{ r.report_date|date:"d-M-Y" }}</td>
+                        <td>
+                            <div>
+                                <a href="{% url 'site_detail' r.site.id %}" class="fw-bold text-primary text-decoration-none">
+                                    <i class="bi bi-buildings me-1"></i>{{ r.site.name }}
+                                </a>
+                            </div>
+                            <small class="text-muted">{{ r.site.code }} &bull; {{ r.get_site_status_display }}</small>
+                        </td>
+                        <td>
+                            <span class="badge {{ r.status|status_badge_class }}">
+                                {{ r.get_status_display }}
+                            </span>
+                        </td>
+                        <td>
+                            <div>{{ r.reported_by_name }}</div>
+                            <small class="text-muted">{{ r.reported_by_designation }}</small>
+                        </td>
+                        <td class="text-end">{{ r.total_manpower_count }} workers</td>
+                        <td class="text-end fw-bold currency-inr text-dark">{{ r.total_site_cost|inr_format }}</td>
+                        <td class="text-center">
+                            <div class="btn-group btn-group-sm">
+                                <a href="{% url 'report_detail' r.id %}" class="btn btn-light" title="View Report">
+                                    <i class="bi bi-eye"></i>
+                                </a>
+                                {% if r.status != 'APPROVED' or is_admin %}
+                                <a href="{% url 'report_edit' r.id %}" class="btn btn-light text-warning" title="Edit Report">
+                                    <i class="bi bi-pencil"></i>
+                                </a>
+                                {% endif %}
+                                <a href="{% url 'report_excel_export' r.id %}" class="btn btn-light text-success" title="Download Excel">
+                                    <i class="bi bi-file-earmark-excel"></i>
+                                </a>
+                                <a href="{% url 'report_print' r.id %}" target="_blank" class="btn btn-light text-secondary" title="Print View">
+                                    <i class="bi bi-printer"></i>
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="8" class="text-center py-5 text-muted">
+                            <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                            No reports matched your search or filters.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- PAGINATION -->
+{% if page_obj.has_other_pages %}
+<nav aria-label="Page navigation">
+    <ul class="pagination pagination-sm justify-content-center">
+        {% if page_obj.has_previous %}
+        <li class="page-item">
+            <a class="page-link" href="?page=1&site_id={{ selected_site }}&status={{ selected_status }}&date_from={{ date_from }}&date_to={{ date_to }}&q={{ search_query }}">&laquo; First</a>
+        </li>
+        <li class="page-item">
+            <a class="page-link" href="?page={{ page_obj.previous_page_number }}&site_id={{ selected_site }}&status={{ selected_status }}&date_from={{ date_from }}&date_to={{ date_to }}&q={{ search_query }}">Previous</a>
+        </li>
+        {% endif %}
+
+        <li class="page-item disabled">
+            <span class="page-link text-dark">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+        </li>
+
+        {% if page_obj.has_next %}
+        <li class="page-item">
+            <a class="page-link" href="?page={{ page_obj.next_page_number }}&site_id={{ selected_site }}&status={{ selected_status }}&date_from={{ date_from }}&date_to={{ date_to }}&q={{ search_query }}">Next</a>
+        </li>
+        <li class="page-item">
+            <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}&site_id={{ selected_site }}&status={{ selected_status }}&date_from={{ date_from }}&date_to={{ date_to }}&q={{ search_query }}">Last &raquo;</a>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}

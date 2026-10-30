@@ -1,0 +1,90 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ title }} - Master Data - Vikas Engineering{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-12 col-md-8 col-lg-7">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                <h5 class="fw-bold mb-0 text-dark">
+                    <i class="bi bi-person-gear text-primary me-2"></i> {{ title }}
+                </h5>
+                <a href="{% url 'user_list' %}" class="btn btn-sm btn-outline-secondary">Back to List</a>
+            </div>
+            <div class="card-body p-4">
+                <form method="post">
+                    {% csrf_token %}
+                    
+                    <div class="row g-3">
+                        <div class="col-12 col-md-6">
+                            <label class="form-label fw-semibold">Username <span class="text-danger">*</span></label>
+                            <input type="text" name="username" class="form-control" required
+                                   value="{% if target_user %}{{ target_user.username }}{% endif %}"
+                                   {% if target_user %}readonly class="form-control bg-light"{% endif %}>
+                        </div>
+
+                        <div class="col-12 col-md-6">
+                            <label class="form-label fw-semibold">Password {% if not target_user %}<span class="text-danger">*</span>{% endif %}</label>
+                            <input type="password" name="password" class="form-control" placeholder="{% if target_user %}Leave blank to keep unchanged{% else %}Enter initial password{% endif %}">
+                        </div>
+
+                        <div class="col-12 col-md-6">
+                            <label class="form-label fw-semibold">First Name</label>
+                            <input type="text" name="first_name" class="form-control" value="{% if target_user %}{{ target_user.first_name }}{% endif %}">
+                        </div>
+
+                        <div class="col-12 col-md-6">
+                            <label class="form-label fw-semibold">Last Name</label>
+                            <input type="text" name="last_name" class="form-control" value="{% if target_user %}{{ target_user.last_name }}{% endif %}">
+                        </div>
+
+                        <div class="col-12 col-md-6">
+                            <label class="form-label fw-semibold">Email Address</label>
+                            <input type="email" name="email" class="form-control" value="{% if target_user %}{{ target_user.email }}{% endif %}">
+                        </div>
+
+                        <div class="col-12 col-md-6">
+                            <label class="form-label fw-semibold">Contact Phone</label>
+                            <input type="text" name="phone" class="form-control" value="{% if profile %}{{ profile.phone }}{% endif %}">
+                        </div>
+
+                        <div class="col-12 col-md-6">
+                            <label class="form-label fw-semibold">System Role <span class="text-danger">*</span></label>
+                            <select name="role" class="form-select" required>
+                                {% for r_code, r_lbl in roles %}
+                                    <option value="{{ r_code }}" {% if profile and profile.role == r_code %}selected{% endif %}>
+                                        {{ r_lbl }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="col-12 col-md-6">
+                            <label class="form-label fw-semibold">Job Designation</label>
+                            <input type="text" name="designation" class="form-control" placeholder="e.g. Senior Site Engineer" value="{% if profile %}{{ profile.designation }}{% endif %}">
+                        </div>
+
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">Assigned Construction Sites</label>
+                            <select name="assigned_sites" class="form-select" multiple size="4">
+                                {% for s in sites %}
+                                    <option value="{{ s.id }}" {% if s.id in user_assigned_site_ids %}selected{% endif %}>
+                                        {{ s.name }} ({{ s.code }})
+                                    </option>
+                                {% endfor %}
+                            </select>
+                            <small class="text-muted">Hold Ctrl (or Cmd) to select multiple sites. If none selected, user can view all sites.</small>
+                        </div>
+                    </div>
+
+                    <div class="d-flex justify-content-end gap-2 mt-4">
+                        <a href="{% url 'user_list' %}" class="btn btn-secondary">Cancel</a>
+                        <button type="submit" class="btn btn-primary px-4">Save User Account</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

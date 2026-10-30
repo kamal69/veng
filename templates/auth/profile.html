@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+{% load custom_filters %}
+
+{% block title %}My Profile - Vikas Engineering{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-12 col-lg-8">
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-header bg-white py-3 d-flex align-items-center justify-content-between">
+                <h5 class="fw-bold mb-0 text-dark">
+                    <i class="bi bi-person-badge text-primary me-2"></i> User Profile & Role Permissions
+                </h5>
+                <span class="badge {{ current_role|role_badge_class }} fs-6">
+                    {{ profile.get_role_display|default:current_role }}
+                </span>
+            </div>
+            <div class="card-body p-4">
+                <div class="row g-4">
+                    <div class="col-12 col-md-4 text-center border-end">
+                        <div class="display-1 text-primary mb-2">
+                            <i class="bi bi-person-circle"></i>
+                        </div>
+                        <h4 class="fw-bold mb-1">{{ user.get_full_name|default:user.username }}</h4>
+                        <div class="text-muted mb-2">@{{ user.username }}</div>
+                        <span class="badge bg-secondary">{{ profile.designation|default:"Staff Member" }}</span>
+                    </div>
+
+                    <div class="col-12 col-md-8">
+                        <h6 class="text-uppercase text-muted fw-bold small mb-3">Account Details</h6>
+                        <dl class="row mb-4">
+                            <dt class="col-sm-4 text-muted">Email Address:</dt>
+                            <dd class="col-sm-8">{{ user.email|default:"Not specified" }}</dd>
+
+                            <dt class="col-sm-4 text-muted">Phone Number:</dt>
+                            <dd class="col-sm-8">{{ profile.phone|default:"Not specified" }}</dd>
+
+                            <dt class="col-sm-4 text-muted">Designation:</dt>
+                            <dd class="col-sm-8">{{ profile.designation|default:"Site Engineer" }}</dd>
+
+                            <dt class="col-sm-4 text-muted">Account Role:</dt>
+                            <dd class="col-sm-8 fw-semibold text-primary">{{ profile.get_role_display }}</dd>
+
+                            <dt class="col-sm-4 text-muted">Account Created:</dt>
+                            <dd class="col-sm-8">{{ user.date_joined|date:"d M Y, H:i" }}</dd>
+                        </dl>
+
+                        <h6 class="text-uppercase text-muted fw-bold small mb-3">Assigned Construction Sites</h6>
+                        {% if profile.assigned_sites.all %}
+                            <div class="d-flex flex-wrap gap-2">
+                                {% for s in profile.assigned_sites.all %}
+                                    <span class="badge bg-light text-dark border p-2">
+                                        <i class="bi bi-geo-alt-fill text-danger me-1"></i> {{ s.name }} ({{ s.code }})
+                                    </span>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            <p class="text-muted small">All active sites accessible under current role.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
