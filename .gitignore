@@ -16,6 +16,7 @@ staticfiles/
 
 # Logs
 *.log
+*_backup*.sqlite3
 
 # OS & IDE
 .DS_Store
