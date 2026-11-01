@@ -1359,6 +1359,8 @@ def site_reconciliation_view(request):
 
         variance = item['actual_total_paid'] - item['dpr_total_cost']
         item['total_variance'] = variance
+        item['labour_diff'] = item['actual_labour_paid'] - item['dpr_manpower_cost']
+        item['machinery_diff'] = item['actual_machinery_paid'] - item['dpr_machinery_cost']
 
         if has_rep and has_cash:
             if abs(variance) < Decimal('1.00'):

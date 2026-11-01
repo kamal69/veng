@@ -166,7 +166,7 @@
                         </div>
                         {% if r.dpr_manpower_cost != r.actual_labour_paid %}
                             <div class="extra-small text-warning mt-1">
-                                Diff: ₹{{ r.actual_labour_paid|subtract:r.dpr_manpower_cost|floatformat:2 }}
+                                Diff: ₹{{ r.labour_diff|floatformat:2 }}
                             </div>
                         {% endif %}
                     </td>
@@ -183,7 +183,7 @@
                         </div>
                         {% if r.dpr_machinery_cost != r.actual_machinery_paid %}
                             <div class="extra-small text-warning mt-1">
-                                Diff: ₹{{ r.actual_machinery_paid|subtract:r.dpr_machinery_cost|floatformat:2 }}
+                                Diff: ₹{{ r.machinery_diff|floatformat:2 }}
                             </div>
                         {% endif %}
                     </td>

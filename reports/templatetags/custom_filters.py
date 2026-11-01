@@ -70,3 +70,17 @@ def status_badge_class(status):
         'RAIN_DELAY': 'bg-secondary',
     }
     return mapping.get(status, 'bg-secondary')
+
+
+@register.filter(name='subtract')
+def subtract(value, arg):
+    """
+    Subtracts the arg from the value: value - arg.
+    """
+    try:
+        val = Decimal(str(value or 0))
+        sub = Decimal(str(arg or 0))
+        return val - sub
+    except Exception:
+        return Decimal('0.00')
+
