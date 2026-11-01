@@ -83,6 +83,11 @@
                                 <i class="bi bi-shield-check text-success"></i> Audit &amp; Reconciliation
                             </a>
                         </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if 'material' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'material_list' %}">
+                                <i class="bi bi-box-seam text-info"></i> Material Purchases
+                            </a>
+                        </li>
 
                         <!-- EMPLOYEE CASH & EXPENSE SYSTEM -->
                         <li class="sidebar-section-title">Cash & Expenses (Accounting)</li>

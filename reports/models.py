@@ -404,4 +404,97 @@ class ReportToolEntry(models.Model):
         return f"{self.tool_name} (x{self.quantity}) @ {self.site_report.site.name}"
 
 
+class MaterialPaymentMode(models.TextChoices):
+    CASH = 'CASH', 'Cash'
+    ONLINE = 'ONLINE', 'Online / UPI / NEFT'
+    CREDIT = 'CREDIT', 'Credit (Pending / Udhar)'
+    CHEQUE = 'CHEQUE', 'Cheque'
+
+
+class MaterialPurchase(models.Model):
+    """
+    Tracks material inward, purchase register, vendor bills, tax values, and payment status.
+    """
+    site = models.ForeignKey(Site, on_delete=models.SET_NULL, null=True, blank=True, related_name='material_purchases')
+    site_name_text = models.CharField(max_length=200, blank=True, help_text="Stored site name or manual entry")
+
+    material_date = models.DateField(default=timezone.now, help_text="Date material received on site")
+    payment_date = models.DateField(null=True, blank=True, help_text="Date payment settled (leave blank if credit)")
+
+    party_name = models.CharField(max_length=200, blank=True, default='N/A', help_text="Vendor / Supplier / Crusher Name")
+    material_name = models.CharField(max_length=200, help_text="e.g. Gatka, Sand, TMT Steel, Cement, Bricks")
+    bill_no = models.CharField(max_length=100, blank=True, default='N/A', help_text="Invoice / Challan / Bill No.")
+
+    purchased_by = models.CharField(max_length=150, blank=True, help_text="Staff who ordered / purchased the material")
+    payment_by = models.CharField(max_length=150, blank=True, help_text="Staff or company entity who paid")
+    payment_mode = models.CharField(max_length=50, choices=MaterialPaymentMode.choices, default=MaterialPaymentMode.CASH)
+
+    quantity = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+    measuring_unit = models.CharField(max_length=50, default='FT', help_text="FT, CFT, KG, TON, BAGS, PC, NOS, LTR, SQFT, MTR")
+    rate = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'), help_text="Unit rate in INR")
+
+    taxable_value = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0.00'), help_text="Quantity × Rate")
+    cgst = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'), help_text="CGST Amount")
+    sgst = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'), help_text="UTGST / SGST Amount")
+    igst = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'), help_text="IGST Amount")
+    total_gst = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0.00'), help_text="CGST + SGST + IGST")
+    net_amount = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0.00'), help_text="Taxable Value + Total GST")
+
+    remark = models.CharField(max_length=255, blank=True)
+
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-material_date', '-id']
+        verbose_name = 'Material Purchase'
+        verbose_name_plural = 'Material Purchases'
+        indexes = [
+            models.Index(fields=['site', 'material_date']),
+            models.Index(fields=['material_date']),
+            models.Index(fields=['party_name']),
+            models.Index(fields=['material_name']),
+        ]
+
+    def save(self, *args, **kwargs):
+        # Auto-compute taxable value if not manually set
+        qty = Decimal(self.quantity or 0)
+        rt = Decimal(self.rate or 0)
+        if qty and rt and (not self.taxable_value or self.taxable_value == Decimal('0.00')):
+            self.taxable_value = (qty * rt).quantize(Decimal('0.01'))
+
+        # Auto-compute total GST if not set
+        c = Decimal(self.cgst or 0)
+        s = Decimal(self.sgst or 0)
+        i = Decimal(self.igst or 0)
+        calc_gst = (c + s + i).quantize(Decimal('0.01'))
+        if not self.total_gst or self.total_gst == Decimal('0.00'):
+            self.total_gst = calc_gst
+        else:
+            calc_gst = Decimal(self.total_gst)
+
+        # Auto-compute net amount if not set
+        taxable = Decimal(self.taxable_value or 0)
+        calc_net = (taxable + calc_gst).quantize(Decimal('0.01'))
+        if not self.net_amount or self.net_amount == Decimal('0.00'):
+            self.net_amount = calc_net
+
+        # Mirror site name text
+        if self.site and not self.site_name_text:
+            self.site_name_text = self.site.name
+
+        super().save(*args, **kwargs)
+
+    @property
+    def site_name_display(self):
+        if self.site:
+            return self.site.name
+        return self.site_name_text or 'General / Unallocated'
+
+    def __str__(self):
+        return f"{self.material_date} | {self.site_name_display} | {self.material_name} - ₹{self.net_amount:,.2f}"
+
+
+
 

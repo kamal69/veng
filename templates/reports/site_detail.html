@@ -26,8 +26,11 @@
                 <a href="{% url 'report_create' %}?site_id={{ site.id }}" class="btn btn-warning text-dark fw-bold btn-sm shadow-sm">
                     <i class="bi bi-plus-circle me-1"></i> + New Report for this Site
                 </a>
-                <a href="{% url 'reports_bulk_excel_export' %}?site_id={{ site.id }}" class="btn btn-light btn-sm shadow-sm">
-                    <i class="bi bi-file-earmark-excel text-success me-1"></i> Export Site Excel
+                <a href="{% url 'material_list' %}?site_id={{ site.id }}" class="btn btn-outline-light btn-sm shadow-sm">
+                    <i class="bi bi-box-seam me-1"></i> Site Materials
+                </a>
+                <a href="{% url 'material_create' %}?site_id={{ site.id }}" class="btn btn-warning text-dark fw-bold btn-sm shadow-sm">
+                    <i class="bi bi-plus-circle me-1"></i> + Material Inward
                 </a>
                 {% if is_admin %}
                 <a href="{% url 'site_edit' site.id %}" class="btn btn-outline-light btn-sm shadow-sm">

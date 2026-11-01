@@ -18,6 +18,13 @@ urlpatterns = [
     path('reports/<int:pk>/excel/', views.report_excel_export_view, name='report_excel_export'),
     path('reports/export/excel/', views.reports_bulk_excel_export_view, name='reports_bulk_excel_export'),
 
+    # Material Purchases & Procurement Register
+    path('materials/', views.material_list_view, name='material_list'),
+    path('materials/new/', views.material_create_view, name='material_create'),
+    path('materials/<int:pk>/edit/', views.material_edit_view, name='material_edit'),
+    path('materials/<int:pk>/delete/', views.material_delete_view, name='material_delete'),
+    path('materials/export/excel/', views.material_export_excel_view, name='material_export_excel'),
+
     # Master Data: Sites & Site Work History
     path('sites/<int:pk>/', views.site_detail_view, name='site_detail'),
     path('master/sites/', views.site_list_view, name='site_list'),

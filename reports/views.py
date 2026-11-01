@@ -16,12 +16,13 @@ from django.core.exceptions import ValidationError
 from .models import (
     Site, Employee, SiteReport, ManpowerEntry, MachineryEntry,
     EmployeeSiteVisit, ReportAuditLog, UserProfile, UserRole,
-    ManpowerCategory, ManpowerType, MachineryOwnership, MachineryBillingBasis, VisitType
+    ManpowerCategory, ManpowerType, MachineryOwnership, MachineryBillingBasis, VisitType,
+    MaterialPurchase, MaterialPaymentMode
 )
 from .services import ReportService
 from .excel_export import export_single_report_to_excel, export_bulk_reports_to_excel
 from .permissions import admin_required, management_required, site_engineer_or_admin_required
-from .forms import SiteForm, EmployeeForm, UserProfileForm, ReturnReportForm
+from .forms import SiteForm, EmployeeForm, UserProfileForm, ReturnReportForm, MaterialPurchaseForm
 
 
 # -------------------------------------------------------------
@@ -1241,7 +1242,7 @@ def site_reconciliation_view(request):
     status_filter = request.GET.get('status', '').strip().upper()
 
     # Sites list
-    report_sites = Site.objects.filter(is_active=True).order_by('name')
+    report_sites = Site.objects.all().order_by('name')
 
     # Date defaults: last 30 days if not provided
     today = timezone.localdate()
@@ -1396,4 +1397,341 @@ def site_reconciliation_view(request):
         'page_title': 'Site Expense & Daily Report Audit Reconciliation',
     }
     return render(request, 'reports/site_reconciliation.html', context)
+
+
+# -------------------------------------------------------------
+# MATERIAL INWARD & PURCHASE REGISTER VIEWS
+# -------------------------------------------------------------
+
+@login_required
+def material_list_view(request):
+    """
+    Lists all material inward and purchase records with filters, KPI stats and pagination.
+    """
+    site_id = request.GET.get('site_id', '').strip()
+    party = request.GET.get('party', '').strip()
+    material = request.GET.get('material', '').strip()
+    mode = request.GET.get('mode', '').strip()
+    date_from = request.GET.get('date_from', '').strip()
+    date_to = request.GET.get('date_to', '').strip()
+    q = request.GET.get('q', '').strip()
+
+    qs = MaterialPurchase.objects.select_related('site', 'created_by').all()
+
+    if site_id and site_id.isdigit():
+        qs = qs.filter(site_id=int(site_id))
+
+    if party:
+        qs = qs.filter(party_name__icontains=party)
+
+    if material:
+        qs = qs.filter(material_name__icontains=material)
+
+    if mode:
+        qs = qs.filter(payment_mode=mode)
+
+    if date_from:
+        try:
+            d_from = datetime.datetime.strptime(date_from, '%Y-%m-%d').date()
+            qs = qs.filter(material_date__gte=d_from)
+        except ValueError:
+            pass
+
+    if date_to:
+        try:
+            d_to = datetime.datetime.strptime(date_to, '%Y-%m-%d').date()
+            qs = qs.filter(material_date__lte=d_to)
+        except ValueError:
+            pass
+
+    if q:
+        qs = qs.filter(
+            Q(material_name__icontains=q) |
+            Q(party_name__icontains=q) |
+            Q(bill_no__icontains=q) |
+            Q(purchased_by__icontains=q) |
+            Q(payment_by__icontains=q) |
+            Q(site_name_text__icontains=q) |
+            Q(site__name__icontains=q) |
+            Q(remark__icontains=q)
+        )
+
+    # Compute KPI totals before pagination
+    total_count = qs.count()
+    aggregates = qs.aggregate(
+        tot_net=Sum('net_amount'),
+        tot_taxable=Sum('taxable_value'),
+        tot_gst=Sum('total_gst'),
+    )
+    total_net = aggregates['tot_net'] or Decimal('0.00')
+    total_taxable = aggregates['tot_taxable'] or Decimal('0.00')
+    total_gst = aggregates['tot_gst'] or Decimal('0.00')
+
+    # Pending credit purchases (where payment date is null or mode is CREDIT)
+    credit_pending = qs.filter(
+        Q(payment_mode=MaterialPaymentMode.CREDIT) | Q(payment_date__isnull=True)
+    ).aggregate(s=Sum('net_amount'))['s'] or Decimal('0.00')
+
+    # Suggestions for filters
+    all_sites = Site.objects.all().order_by('name')
+    distinct_materials = MaterialPurchase.objects.values_list('material_name', flat=True).distinct()[:25]
+    distinct_parties = MaterialPurchase.objects.exclude(party_name__in=['', 'N/A']).values_list('party_name', flat=True).distinct()[:25]
+
+    paginator = Paginator(qs, 50)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+
+    context = {
+        'page_obj': page_obj,
+        'materials': page_obj.object_list,
+        'total_count': total_count,
+        'total_net': total_net,
+        'total_taxable': total_taxable,
+        'total_gst': total_gst,
+        'credit_pending': credit_pending,
+        'all_sites': all_sites,
+        'distinct_materials': distinct_materials,
+        'distinct_parties': distinct_parties,
+        'selected_site': site_id,
+        'selected_party': party,
+        'selected_material': material,
+        'selected_mode': mode,
+        'date_from': date_from,
+        'date_to': date_to,
+        'search_query': q,
+        'page_title': 'Material Inward & Purchases Register',
+    }
+    return render(request, 'reports/material_list.html', context)
+
+
+@login_required
+def material_create_view(request):
+    """
+    Renders material entry form and handles saving new record.
+    """
+    if request.method == 'POST':
+        form = MaterialPurchaseForm(request.POST)
+        if form.is_valid():
+            mat = form.save(commit=False)
+            mat.created_by = request.user
+            mat.save()
+            messages.success(request, f"Material purchase of {mat.material_name} (₹{mat.net_amount:,.2f}) recorded successfully!")
+            return redirect('material_list')
+        else:
+            messages.error(request, "Please correct the errors in the form below.")
+    else:
+        initial = {'material_date': timezone.localdate()}
+        site_id = request.GET.get('site_id')
+        if site_id and site_id.isdigit():
+            initial['site'] = int(site_id)
+        form = MaterialPurchaseForm(initial=initial)
+
+    # Suggestion lists for datalists
+    materials_list = MaterialPurchase.objects.values_list('material_name', flat=True).distinct()[:30]
+    parties_list = MaterialPurchase.objects.exclude(party_name__in=['', 'N/A']).values_list('party_name', flat=True).distinct()[:30]
+    units_list = ['FT', 'CFT', 'KG', 'TON', 'BAGS', 'PC', 'NOS', 'LTR', 'SQFT', 'MTR', 'TRIP']
+    staff_list = Employee.objects.filter(is_active=True).values_list('name', flat=True)[:30]
+
+    return render(request, 'reports/material_form.html', {
+        'form': form,
+        'is_edit': False,
+        'materials_list': materials_list,
+        'parties_list': parties_list,
+        'units_list': units_list,
+        'staff_list': staff_list,
+        'page_title': 'Add Material Inward / Purchase Entry',
+    })
+
+
+@login_required
+def material_edit_view(request, pk):
+    """
+    Handles editing existing material purchase record.
+    """
+    mat = get_object_or_404(MaterialPurchase, pk=pk)
+
+    if request.method == 'POST':
+        form = MaterialPurchaseForm(request.POST, instance=mat)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f"Updated material purchase record for {mat.material_name} successfully.")
+            return redirect('material_list')
+        else:
+            messages.error(request, "Please correct the errors in the form below.")
+    else:
+        form = MaterialPurchaseForm(instance=mat)
+
+    materials_list = MaterialPurchase.objects.values_list('material_name', flat=True).distinct()[:30]
+    parties_list = MaterialPurchase.objects.exclude(party_name__in=['', 'N/A']).values_list('party_name', flat=True).distinct()[:30]
+    units_list = ['FT', 'CFT', 'KG', 'TON', 'BAGS', 'PC', 'NOS', 'LTR', 'SQFT', 'MTR', 'TRIP']
+    staff_list = Employee.objects.filter(is_active=True).values_list('name', flat=True)[:30]
+
+    return render(request, 'reports/material_form.html', {
+        'form': form,
+        'material': mat,
+        'is_edit': True,
+        'materials_list': materials_list,
+        'parties_list': parties_list,
+        'units_list': units_list,
+        'staff_list': staff_list,
+        'page_title': f'Edit Material Purchase: {mat.material_name}',
+    })
+
+
+@login_required
+def material_delete_view(request, pk):
+    """
+    Deletes material purchase entry.
+    """
+    mat = get_object_or_404(MaterialPurchase, pk=pk)
+    if request.method == 'POST':
+        name = mat.material_name
+        amt = mat.net_amount
+        mat.delete()
+        messages.success(request, f"Material purchase of {name} (₹{amt:,.2f}) deleted successfully.")
+        return redirect('material_list')
+
+    return render(request, 'reports/material_confirm_delete.html', {'material': mat})
+
+
+@login_required
+def material_export_excel_view(request):
+    """
+    Exports filtered material purchases to Excel (.xlsx) matching exact spreadsheet columns.
+    """
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    site_id = request.GET.get('site_id', '').strip()
+    party = request.GET.get('party', '').strip()
+    material = request.GET.get('material', '').strip()
+    mode = request.GET.get('mode', '').strip()
+    date_from = request.GET.get('date_from', '').strip()
+    date_to = request.GET.get('date_to', '').strip()
+    q = request.GET.get('q', '').strip()
+
+    qs = MaterialPurchase.objects.select_related('site').all()
+
+    if site_id and site_id.isdigit():
+        qs = qs.filter(site_id=int(site_id))
+    if party:
+        qs = qs.filter(party_name__icontains=party)
+    if material:
+        qs = qs.filter(material_name__icontains=material)
+    if mode:
+        qs = qs.filter(payment_mode=mode)
+    if date_from:
+        try:
+            d_from = datetime.datetime.strptime(date_from, '%Y-%m-%d').date()
+            qs = qs.filter(material_date__gte=d_from)
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            d_to = datetime.datetime.strptime(date_to, '%Y-%m-%d').date()
+            qs = qs.filter(material_date__lte=d_to)
+        except ValueError:
+            pass
+    if q:
+        qs = qs.filter(
+            Q(material_name__icontains=q) |
+            Q(party_name__icontains=q) |
+            Q(bill_no__icontains=q) |
+            Q(purchased_by__icontains=q) |
+            Q(payment_by__icontains=q) |
+            Q(site_name_text__icontains=q) |
+            Q(site__name__icontains=q)
+        )
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "MATERIAL REGISTER"
+
+    headers = [
+        "Site name", "Material Date", "Payment Date", "PARTY NAME", "MATERIAL NAME",
+        "BILL.NO.", "PURCHSED BY", "PAYMENT BY", "CASH/CREDIT/ CHEQUE.",
+        "QUANTITY", "MEASURING UNIT", "RATE", "TAXABLE VALUE",
+        "CGST", "UTGST/SGST", "IGST", "TOTAL GST", "NET AMOUNT", "Remark"
+    ]
+
+    header_font = Font(name="Calibri", size=10, bold=True, color="000000")
+    header_fill = PatternFill(start_color="D9D9D9", end_color="D9D9D9", fill_type="solid")
+    date_header_fill = PatternFill(start_color="BDD7EE", end_color="BDD7EE", fill_type="solid") # Soft blue matching screenshot
+    net_header_fill = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid") # Soft orange matching screenshot
+    thin_border = Border(
+        left=Side(style='thin', color='B0B0B0'),
+        right=Side(style='thin', color='B0B0B0'),
+        top=Side(style='thin', color='B0B0B0'),
+        bottom=Side(style='thin', color='B0B0B0')
+    )
+
+    ws.append(headers)
+    for col_idx, col_name in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col_idx)
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cell.border = thin_border
+        if col_name in ["Material Date", "Payment Date"]:
+            cell.fill = date_header_fill
+        elif col_name == "NET AMOUNT":
+            cell.fill = net_header_fill
+        else:
+            cell.fill = header_fill
+
+    ws.row_dimensions[1].height = 28
+
+    data_font = Font(name="Calibri", size=10)
+    for m in qs:
+        row_vals = [
+            m.site_name_display,
+            m.material_date.strftime("%d.%m.%Y") if m.material_date else "",
+            m.payment_date.strftime("%d.%m.%Y") if m.payment_date else "",
+            m.party_name or "N/A",
+            m.material_name,
+            m.bill_no or "N/A",
+            m.purchased_by or "",
+            m.payment_by or "",
+            m.payment_mode,
+            float(m.quantity) if m.quantity else 0,
+            m.measuring_unit,
+            float(m.rate) if m.rate else 0,
+            float(m.taxable_value) if m.taxable_value else 0,
+            float(m.cgst) if m.cgst else "",
+            float(m.sgst) if m.sgst else "",
+            float(m.igst) if m.igst else "",
+            float(m.total_gst) if m.total_gst else "",
+            float(m.net_amount) if m.net_amount else 0,
+            m.remark or "",
+        ]
+        ws.append(row_vals)
+        cur_row = ws.max_row
+        ws.row_dimensions[cur_row].height = 20
+        for col_idx in range(1, len(headers) + 1):
+            c = ws.cell(row=cur_row, column=col_idx)
+            c.font = data_font
+            c.border = thin_border
+            if headers[col_idx-1] == "NET AMOUNT":
+                c.fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
+                c.number_format = '#,##0.00'
+            elif headers[col_idx-1] in ["RATE", "TAXABLE VALUE", "CGST", "UTGST/SGST", "IGST", "TOTAL GST"]:
+                if c.value != "":
+                    c.number_format = '#,##0.00'
+
+    # Auto-fit column widths
+    for col in ws.columns:
+        max_len = 0
+        col_letter = get_column_letter(col[0].column)
+        for cell in col:
+            val_str = str(cell.value or '')
+            if len(val_str) > max_len:
+                max_len = len(val_str)
+        ws.column_dimensions[col_letter].width = max(max_len + 3, 11)
+
+    response = HttpResponse(content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    today_str = timezone.localdate().strftime('%d-%m-%Y')
+    response['Content-Disposition'] = f'attachment; filename="Material_Register_{today_str}.xlsx"'
+    wb.save(response)
+    return response
+
 

@@ -1,0 +1,371 @@
+{% extends 'base.html' %}
+{% load custom_filters %}
+
+{% block title %}{% if is_edit %}Edit Material Purchase{% else %}New Material Inward & Purchase{% endif %} - Vikas Engineering{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mb-5">
+    <div class="col-12 col-xl-10">
+        <!-- HEADER -->
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <a href="{% url 'material_list' %}" class="btn btn-outline-secondary btn-sm mb-2">
+                    <i class="bi bi-arrow-left me-1"></i> Back to Material Register
+                </a>
+                <h3 class="fw-bold text-dark mb-1">
+                    <i class="bi bi-box-seam text-primary me-2"></i>
+                    {% if is_edit %}Edit Material Purchase Entry{% else %}Record Material Inward &amp; Purchase{% endif %}
+                </h3>
+                <p class="text-muted small mb-0">Record construction site material procurement, billing, quantities, GST, and settlement status.</p>
+            </div>
+        </div>
+
+        <form method="post" id="materialForm">
+            {% csrf_token %}
+
+            {% if form.errors %}
+            <div class="alert alert-danger shadow-sm mb-4">
+                <h6 class="fw-bold mb-1"><i class="bi bi-exclamation-triangle-fill me-2"></i>Please correct the following errors:</h6>
+                <ul class="mb-0 small">
+                    {% for field in form %}
+                        {% for error in field.errors %}
+                            <li><strong>{{ field.label }}:</strong> {{ error }}</li>
+                        {% endfor %}
+                    {% endfor %}
+                    {% for error in form.non_field_errors %}
+                        <li>{{ error }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <!-- SECTION 1: SITE & DATES -->
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-header bg-white py-3">
+                    <h6 class="fw-bold text-dark mb-0"><i class="bi bi-geo-alt text-danger me-2"></i> 1. Construction Site &amp; Dates</h6>
+                </div>
+                <div class="card-body p-4">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Site Name <span class="text-danger">*</span></label>
+                            {{ form.site }}
+                            <div class="form-text extra-small">Select site from directory or specify manual name below.</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Manual Site Name (If not in list)</label>
+                            {{ form.site_name_text }}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Material Date (Inward / Received) <span class="text-danger">*</span></label>
+                            {{ form.material_date }}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Payment Date (Leave empty if Credit / Pending)</label>
+                            {{ form.payment_date }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECTION 2: MATERIAL & VENDOR DETAILS -->
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-header bg-white py-3">
+                    <h6 class="fw-bold text-dark mb-0"><i class="bi bi-building text-primary me-2"></i> 2. Vendor &amp; Material Description</h6>
+                </div>
+                <div class="card-body p-4">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Material Name <span class="text-danger">*</span></label>
+                            {{ form.material_name }}
+                            <datalist id="material_suggestions">
+                                {% for m in materials_list %}
+                                    <option value="{{ m }}">
+                                {% endfor %}
+                                <option value="GATKA">
+                                <option value="SAND">
+                                <option value="TMT Steel 12 mm">
+                                <option value="TMT Steel 10 mm">
+                                <option value="TMT Steel 8 mm">
+                                <option value="CEMENT (PPC)">
+                                <option value="CEMENT (OPC 53)">
+                                <option value="BRICKS">
+                                <option value="FINE SAND">
+                                <option value="ILAND GUARD">
+                                <option value="PVC PIPE">
+                                <option value="STONE AGGREGATE">
+                            </datalist>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Party / Vendor Name</label>
+                            {{ form.party_name }}
+                            <datalist id="party_suggestions">
+                                {% for p in parties_list %}
+                                    <option value="{{ p }}">
+                                {% endfor %}
+                                <option value="SHIVA STONE CRUSHER">
+                                <option value="SWASTIK ENTP">
+                                <option value="SINGH ENTP">
+                                <option value="VIKAS ENGINEERING">
+                            </datalist>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Bill / Invoice / Challan No.</label>
+                            {{ form.bill_no }}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Remark</label>
+                            {{ form.remark }}
+                            <div class="form-text extra-small">e.g. Yes, No, Bill pending, Verified on site</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECTION 3: QUANTITY, RATE & TAXABLE CALCULATION -->
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-header bg-white py-3">
+                    <h6 class="fw-bold text-dark mb-0"><i class="bi bi-calculator text-success me-2"></i> 3. Quantity, Unit Rate &amp; Taxable Amount</h6>
+                </div>
+                <div class="card-body p-4">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Quantity <span class="text-danger">*</span></label>
+                            {{ form.quantity }}
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Measuring Unit <span class="text-danger">*</span></label>
+                            {{ form.measuring_unit }}
+                            <datalist id="unit_suggestions">
+                                {% for u in units_list %}
+                                    <option value="{{ u }}">
+                                {% endfor %}
+                            </datalist>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Rate per Unit (₹) <span class="text-danger">*</span></label>
+                            {{ form.rate }}
+                        </div>
+
+                        <!-- LIVE TAXABLE VALUE COMPUTED -->
+                        <div class="col-md-12">
+                            <div class="p-3 bg-light rounded border d-flex justify-content-between align-items-center">
+                                <div>
+                                    <span class="small fw-semibold text-muted">Taxable Value (Quantity × Rate):</span>
+                                    <div class="extra-small text-muted">Auto-calculated or override if bill specifies exact base value.</div>
+                                </div>
+                                <div class="col-md-4">
+                                    {{ form.taxable_value }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECTION 4: GST TAXES & NET BILL AMOUNT -->
+            <div class="card shadow-sm border-0 mb-4 border-top border-success border-3">
+                <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                    <h6 class="fw-bold text-dark mb-0"><i class="bi bi-percent text-success me-2"></i> 4. GST Taxes &amp; Final Net Amount</h6>
+                    <!-- QUICK GST TAX PRESETS -->
+                    <div class="btn-group btn-group-sm">
+                        <button type="button" class="btn btn-outline-secondary" onclick="applyGstPreset(0)">0% (Exempt)</button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="applyGstPreset(5)">5%</button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="applyGstPreset(12)">12%</button>
+                        <button type="button" class="btn btn-outline-primary" onclick="applyGstPreset(18)">18% (Steel)</button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="applyGstPreset(28)">28% (Cement)</button>
+                    </div>
+                </div>
+                <div class="card-body p-4">
+                    <div class="row g-3">
+                        <!-- Tax Mode Toggle -->
+                        <div class="col-12 mb-2">
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="tax_type" id="taxIntra" value="intra" checked onchange="recalculateGst()">
+                                <label class="form-check-label small fw-semibold" for="taxIntra">Intra-State (CGST + SGST / UTGST)</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="tax_type" id="taxInter" value="inter" onchange="recalculateGst()">
+                                <label class="form-check-label small fw-semibold" for="taxInter">Inter-State (IGST)</label>
+                            </div>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label extra-small fw-semibold text-muted">CGST (₹)</label>
+                            {{ form.cgst }}
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label extra-small fw-semibold text-muted">UTGST / SGST (₹)</label>
+                            {{ form.sgst }}
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label extra-small fw-semibold text-muted">IGST (₹)</label>
+                            {{ form.igst }}
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Total GST Taxes (₹)</label>
+                            {{ form.total_gst }}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-primary">Final Net Inward Amount (₹) <span class="text-danger">*</span></label>
+                            {{ form.net_amount }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECTION 5: PAYMENT RESPONSIBILITY & MODE -->
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-header bg-white py-3">
+                    <h6 class="fw-bold text-dark mb-0"><i class="bi bi-wallet2 text-warning me-2"></i> 5. Payment Details &amp; Custody</h6>
+                </div>
+                <div class="card-body p-4">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Purchased By (Order Placed By)</label>
+                            {{ form.purchased_by }}
+                            <datalist id="staff_suggestions">
+                                {% for s in staff_list %}
+                                    <option value="{{ s }}">
+                                {% endfor %}
+                                <option value="DIVYANSH">
+                                <option value="BIPIN G">
+                                <option value="VIKAS ENGINEERING">
+                                <option value="LALIT">
+                                <option value="SONU">
+                                <option value="RAKESH">
+                            </datalist>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Payment Settled By</label>
+                            {{ form.payment_by }}
+                            <div class="form-text extra-small">Leave empty if credit / pending.</div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Payment Mode <span class="text-danger">*</span></label>
+                            {{ form.payment_mode }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ACTIONS -->
+            <div class="d-flex justify-content-between align-items-center mb-5">
+                <a href="{% url 'material_list' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-x-circle me-1"></i> Cancel
+                </a>
+                <button type="submit" class="btn btn-primary px-4 shadow-sm">
+                    <i class="bi bi-check-circle-fill me-1"></i> Save Material Entry
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const qtyInput = document.getElementById('id_quantity');
+    const rateInput = document.getElementById('id_rate');
+    const taxableInput = document.getElementById('id_taxable_value');
+    const cgstInput = document.getElementById('id_cgst');
+    const sgstInput = document.getElementById('id_sgst');
+    const igstInput = document.getElementById('id_igst');
+    const totGstInput = document.getElementById('id_total_gst');
+    const netInput = document.getElementById('id_net_amount');
+    const modeSelect = document.getElementById('id_payment_mode');
+    const pDateInput = document.getElementById('id_payment_date');
+
+    // 1. Calculate Taxable Value = Qty * Rate
+    function updateTaxable() {
+        const qty = parseFloat(qtyInput.value) || 0;
+        const rate = parseFloat(rateInput.value) || 0;
+        if (qty > 0 && rate > 0) {
+            const tax = (qty * rate);
+            taxableInput.value = tax.toFixed(2);
+        }
+        updateTotals();
+    }
+
+    // 2. Calculate Total GST & Net Amount
+    function updateTotals() {
+        const taxable = parseFloat(taxableInput.value) || 0;
+        const cgst = parseFloat(cgstInput.value) || 0;
+        const sgst = parseFloat(sgstInput.value) || 0;
+        const igst = parseFloat(igstInput.value) || 0;
+
+        const totGst = cgst + sgst + igst;
+        totGstInput.value = totGst.toFixed(2);
+
+        const net = taxable + totGst;
+        netInput.value = net.toFixed(2);
+    }
+
+    if (qtyInput) qtyInput.addEventListener('input', updateTaxable);
+    if (rateInput) rateInput.addEventListener('input', updateTaxable);
+    if (taxableInput) taxableInput.addEventListener('input', updateTotals);
+    if (cgstInput) cgstInput.addEventListener('input', updateTotals);
+    if (sgstInput) sgstInput.addEventListener('input', updateTotals);
+    if (igstInput) igstInput.addEventListener('input', updateTotals);
+    if (totGstInput) totGstInput.addEventListener('input', function () {
+        const taxable = parseFloat(taxableInput.value) || 0;
+        const totGst = parseFloat(totGstInput.value) || 0;
+        netInput.value = (taxable + totGst).toFixed(2);
+    });
+
+    // 3. Payment Mode Changes
+    if (modeSelect) {
+        modeSelect.addEventListener('change', function () {
+            if (this.value === 'CREDIT' && pDateInput) {
+                pDateInput.value = '';
+            }
+        });
+    }
+
+    // 4. Quick GST Presets
+    window.applyGstPreset = function (percent) {
+        const taxable = parseFloat(taxableInput.value) || 0;
+        const isInter = document.getElementById('taxInter').checked;
+
+        if (percent === 0) {
+            cgstInput.value = '0.00';
+            sgstInput.value = '0.00';
+            igstInput.value = '0.00';
+        } else if (isInter) {
+            const igstVal = (taxable * (percent / 100));
+            cgstInput.value = '0.00';
+            sgstInput.value = '0.00';
+            igstInput.value = igstVal.toFixed(2);
+        } else {
+            const halfPercent = percent / 2;
+            const halfVal = (taxable * (halfPercent / 100));
+            cgstInput.value = halfVal.toFixed(2);
+            sgstInput.value = halfVal.toFixed(2);
+            igstInput.value = '0.00';
+        }
+        updateTotals();
+    };
+
+    window.recalculateGst = function () {
+        const cgst = parseFloat(cgstInput.value) || 0;
+        const sgst = parseFloat(sgstInput.value) || 0;
+        const igst = parseFloat(igstInput.value) || 0;
+        const isInter = document.getElementById('taxInter').checked;
+
+        const currentTotal = cgst + sgst + igst;
+        if (currentTotal > 0) {
+            if (isInter) {
+                igstInput.value = currentTotal.toFixed(2);
+                cgstInput.value = '0.00';
+                sgstInput.value = '0.00';
+            } else {
+                const half = currentTotal / 2;
+                cgstInput.value = half.toFixed(2);
+                sgstInput.value = half.toFixed(2);
+                igstInput.value = '0.00';
+            }
+        }
+        updateTotals();
+    };
+});
+</script>
+{% endblock %}
